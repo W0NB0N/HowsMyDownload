@@ -1,0 +1,15 @@
+[Unit]
+Description=Download Notifs FastAPI Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/notifs
+EnvironmentFile=/opt/notifs/.env
+ExecStart=/opt/notifs/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

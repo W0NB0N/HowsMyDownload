@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download Notifs</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Download Notifs</h1>
+      <span id="status-badge" class="badge">Idle</span>
+    </header>
+    <main>
+      <div class="field">
+        <label for="server-url">Server URL</label>
+        <input type="text" id="server-url" placeholder="http://localhost:8000" />
+      </div>
+      <div class="field toggle-field">
+        <label for="enabled-toggle">Enable Sync</label>
+        <input type="checkbox" id="enabled-toggle" checked />
+      </div>
+      <div id="pairing-section">
+        <button id="pair-btn" class="btn primary">Pair with Phone</button>
+        <div id="qr-container" class="hidden"></div>
+      </div>
+    </main>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
