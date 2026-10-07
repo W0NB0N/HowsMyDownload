@@ -7,26 +7,67 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Download Notifs</h1>
-      <span id="status-badge" class="badge">Idle</span>
+  <div class="card">
+    <header class="header">
+      <div class="title-row">
+        <span class="app-icon">📲</span>
+        <h1 class="title">Download Notifs</h1>
+      </div>
+      <span id="status-badge" class="badge badge-idle">Idle</span>
     </header>
-    <main>
+
+    <section class="section">
+      <div class="field-row">
+        <label for="enabled-toggle" class="label-toggle">Enable Sync</label>
+        <label class="switch">
+          <input type="checkbox" id="enabled-toggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="field">
         <label for="server-url">Server URL</label>
-        <input type="text" id="server-url" placeholder="http://localhost:8000" />
+        <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" />
       </div>
-      <div class="field toggle-field">
-        <label for="enabled-toggle">Enable Sync</label>
-        <input type="checkbox" id="enabled-toggle" checked />
+      <div class="field">
+        <label for="pc-name">PC Name</label>
+        <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" />
       </div>
-      <div id="pairing-section">
-        <button id="pair-btn" class="btn primary">Pair with Phone</button>
-        <div id="qr-container" class="hidden"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Active Downloads</h2>
+        <span id="download-count" class="count-pill">0</span>
       </div>
-    </main>
+      <div id="downloads-container" class="downloads-list">
+        <div class="empty-state">No downloads active in Chrome</div>
+      </div>
+    </section>
+
+    <section class="section" id="pairing-section">
+      <div class="section-header">
+        <h2>Phone Pairing</h2>
+      </div>
+      <div class="pairing-box">
+        <div id="pairing-status" class="pairing-status">Not Paired</div>
+        <button id="pair-btn" class="btn btn-secondary">Pair with Phone</button>
+        <div id="qr-container" class="qr-box hidden">
+          <div class="qr-placeholder">QR Pairing will activate in Phase 6</div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <button id="export-trace-btn" class="btn btn-link" title="Export recorded samples as JSON for testing">
+        💾 Export Sample Trace
+      </button>
+      <span id="last-sample-time" class="timestamp"></span>
+    </footer>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
