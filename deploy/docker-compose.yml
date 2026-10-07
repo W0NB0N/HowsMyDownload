@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - STORE=sqlite
+      - SQLITE_PATH=/data/notifs.db
+      - NOTIFIER_TYPE=fcm
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/service-account.json
+    volumes:
+      - data:/data
+      - ./secrets:/secrets:ro
+
+volumes:
+  data:

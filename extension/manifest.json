@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Download Notifs",
+  "version": "0.1.0",
+  "description": "Mirrors Chrome download progress to your phone in real time.",
+  "permissions": [
+    "downloads",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Download Notifs"
+  }
+}
