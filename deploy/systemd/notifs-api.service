@@ -1,15 +1,32 @@
 [Unit]
-Description=Download Notifs FastAPI Service
-After=network.target
+Description=Download Notifs Production Backend Service
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/notifs
-EnvironmentFile=/opt/notifs/.env
-ExecStart=/opt/notifs/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8000
+WorkingDirectory=/opt/notifs/deploy
+EnvironmentFile=/opt/notifs/deploy/.env
+
+# Run via Docker Compose for isolated container execution
+ExecStartPre=-/usr/bin/docker compose -f /opt/notifs/deploy/docker-compose.yml down
+ExecStart=/usr/bin/docker compose -f /opt/notifs/deploy/docker-compose.yml up
+ExecStop=/usr/bin/docker compose -f /opt/notifs/deploy/docker-compose.yml down
+
 Restart=always
-RestartSec=5
+RestartSec=5s
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+
+# Sandboxing and Resource Limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Standard Output / Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=notifs-api
 
 [Install]
 WantedBy=multi-user.target

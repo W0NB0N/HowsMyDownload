@@ -1,19 +1,31 @@
 services:
-  api:
+  notifs-api:
     build:
-      context: .
+      context: ..
       dockerfile: deploy/Dockerfile
+    container_name: notifs-api
     restart: unless-stopped
     ports:
+      # Bind only to host loopback interface so traffic MUST flow through Nginx reverse proxy
       - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
     environment:
-      - STORE=sqlite
-      - SQLITE_PATH=/data/notifs.db
-      - NOTIFIER_TYPE=fcm
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/service-account.json
+      - STORE_TYPE=${STORE_TYPE:-firestore}
+      - NOTIFIER_TYPE=${NOTIFIER_TYPE:-fcm}
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
     volumes:
-      - data:/data
-      - ./secrets:/secrets:ro
-
-volumes:
-  data:
+      # Mount Firebase service account key in read-only mode
+      - ./service-account.json:/app/service-account.json:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

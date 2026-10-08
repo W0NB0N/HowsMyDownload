@@ -1,6 +1,6 @@
 # Current Build Status & Architecture Topology
 
-*Last Updated: Phase 6 Completion (QR Pairing System & Bearer Authentication)*
+*Last Updated: Phase 7 Completion (Oracle Cloud VM Production Deployment Suite & Docs)*
 
 ---
 
@@ -22,7 +22,39 @@ graph TD
         POP -->|Triggers POLL_NOW / Settings / Pair / Unpair| SW
     end
 
-    subgraph BackendServer["Server (FastAPI Engine & Tracker)"]
+    subgraph AndroidClient["Android Client (Kotlin / Compose)"]
+        ACT_MAIN["MainActivity.kt & HomeScreen.kt\n(Dark Terminal UI, Pairing Card, Token Display)"]
+        QR_SCAN["ui/QrScannerScreen.kt\n(CameraX Preview + ML Kit Barcode Analyzer HUD)"]
+        THEME["ui/theme/ (Color.kt, Theme.kt)\n(Render-inspired Dark Palette)"]
+        FCM_SVC["service/NotifFcmService.kt\n(FirebaseMessagingService Handler)"]
+        NOTIF_HLP["service/NotificationHelper.kt\n(Progress & Completion Channels, Groups)"]
+        DISMISS_RCV["service/NotificationDismissReceiver.kt\n(Swipe-away Dismissal Tracking)"]
+        DATA_STORE["data/PairingDataStore.kt\n(Jetpack DataStore Pairing State & Flows)"]
+
+        ACT_MAIN --> THEME
+        ACT_MAIN --> NOTIF_HLP
+        ACT_MAIN --> DATA_STORE
+        ACT_MAIN --> QR_SCAN
+        QR_SCAN --> DATA_STORE
+        FCM_SVC --> NOTIF_HLP
+        FCM_SVC --> DATA_STORE
+        NOTIF_HLP --> DISMISS_RCV
+    end
+
+    subgraph ProductionDeployment["Oracle Cloud Infrastructure (Production VM)"]
+        IPT["iptables / UFW\n(Ports 80 & 443 Netfilter)"]
+        NGINX["nginx.conf\n(Rate Limit 30r/s, SSL Termination, HSTS, Gzip, WS)"]
+        CERT["Certbot / Let's Encrypt\n(Auto-renewing TLS)"]
+        SYS_SVC["systemd (notifs-api.service)\n(Docker Compose Daemon Orchestration)"]
+        DKR["Docker Container (Python 3.12-slim)\n(Non-root appuser, Multi-worker Uvicorn, 127.0.0.1:8000)"]
+
+        IPT --> NGINX
+        CERT -.->|Certificates| NGINX
+        SYS_SVC --> DKR
+        NGINX -->|Reverse Proxy / HTTP 1.1| DKR
+    end
+
+    subgraph BackendServer["Server (FastAPI Engine & Tracker inside Container)"]
         MAIN["main.py\n(FastAPI App Factory, Lifespan, CORS)"]
         API_SAMPLES["api/samples.py\n(POST /v1/samples Endpoint with Bearer Auth)"]
         API_PAIRINGS["api/pairings.py\n(POST /v1/pairings, /claim, GET/DELETE /v1/pairings/{id})"]
@@ -44,6 +76,7 @@ graph TD
         NOTIF_FCM["notifier/fcm.py\n(Firebase Admin High-Priority Data Notifier)"]
         NOTIF_COMPOSITE["notifier/composite.py\n(Dual Multiplexer: Console + FCM)"]
 
+        DKR --> MAIN
         MAIN --> API_SAMPLES
         MAIN --> API_PAIRINGS
         MAIN --> API_HEALTH
@@ -62,31 +95,9 @@ graph TD
         NOTIF_FCM -.->|Implements| NOTIF_BASE
     end
 
-    subgraph FirebaseCloud["Google Firebase Cloud Messaging"]
+    subgraph FirebaseCloud["Google Firebase Cloud Services"]
         FCM_SRV["Firebase Cloud Messaging (FCM)"]
-    end
-
-    subgraph AndroidClient["Android Client (Kotlin / Compose)"]
-        ACT_MAIN["MainActivity.kt & HomeScreen.kt\n(Dark Terminal UI, Pairing Card, Token Display)"]
-        QR_SCAN["ui/QrScannerScreen.kt\n(CameraX Preview + ML Kit Barcode Analyzer HUD)"]
-        THEME["ui/theme/ (Color.kt, Theme.kt)\n(Render-inspired Dark Palette)"]
-        FCM_SVC["service/NotifFcmService.kt\n(FirebaseMessagingService Handler)"]
-        NOTIF_HLP["service/NotificationHelper.kt\n(Progress & Completion Channels, Groups)"]
-        DISMISS_RCV["service/NotificationDismissReceiver.kt\n(Swipe-away Dismissal Tracking)"]
-        DATA_STORE["data/PairingDataStore.kt\n(Jetpack DataStore Pairing State & Flows)"]
-
-        ACT_MAIN --> THEME
-        ACT_MAIN --> NOTIF_HLP
-        ACT_MAIN --> DATA_STORE
-        ACT_MAIN --> QR_SCAN
-        QR_SCAN --> DATA_STORE
-        FCM_SVC --> NOTIF_HLP
-        FCM_SVC --> DATA_STORE
-        NOTIF_HLP --> DISMISS_RCV
-    end
-
-    subgraph Deployment["Deployment & DevOps"]
-        DEP_CONF["Dockerfile, nginx.conf, systemd, docker-compose.yml"]
+        FS_DB["Cloud Firestore (Client-locked Rules)"]
     end
 
     subgraph DevTools["Testing & Verification Tools"]
@@ -96,13 +107,10 @@ graph TD
         TEST_SRV["server/tests/\n(22 Pytest Suites for Server, Auth, Pairings & FCM)"]
     end
 
-    POL -.->|Schema v1 Samples| API
-    POP -->|POST /v1/pairings| API_PAIRINGS
-    QR_SCAN -->|POST /v1/pairings/{code}/claim| API_PAIRINGS
-    API -->|Authorized POST /v1/samples with Bearer| API_SAMPLES
-    POP -->|GET /health| API_HEALTH
-    POP -.->|Exported JSON Traces| TLS_REPLAY
-    TLS_REPLAY -->|POST /v1/samples| API_SAMPLES
+    POL -.->|Schema v1 Samples via HTTPS| NGINX
+    POP -->|POST /v1/pairings via HTTPS| NGINX
+    QR_SCAN -->|POST /v1/pairings/{code}/claim via HTTPS| NGINX
+    STORE_FS -->|Firebase Admin SDK| FS_DB
     NOTIF_FCM -->|Firebase Admin SDK| FCM_SRV
     FCM_SRV -->|High-Priority Data Message| FCM_SVC
 ```
@@ -113,6 +121,13 @@ graph TD
 
 | Module / Component | Path | Responsibility & Implemented State | Inter-module Connection |
 |---|---|---|---|
+| **Production Dockerfile** | `deploy/Dockerfile` | Multi-arch (ARM64 / x86_64) Python 3.12-slim container with non-root user `appuser`, built-in healthcheck, and multi-worker Uvicorn. | Builds backend image for Docker Compose. |
+| **Docker Compose Orchestration** | `deploy/docker-compose.yml` | Isolated container running backend strictly bound to `127.0.0.1:8000`, read-only Firebase credential mounting, and JSON log rotation (`10m`, max 3 files). | Managed by systemd. |
+| **Nginx Reverse Proxy & Security** | `deploy/nginx.conf` | SSL termination, HTTP $\rightarrow$ HTTPS redirection, rate limiting (`30 req/s`, burst 20), WebSocket upgrade headers, HSTS, Gzip compression, and security headers. | Fronts all client HTTPS traffic on ports 80/443. |
+| **Systemd Service Unit** | `deploy/systemd/notifs-api.service` | Production OS service manager with auto-restart (`RestartSec=5s`), process isolation, and journald logging. | Auto-launches Docker Compose at boot. |
+| **Automated Setup Script** | `deploy/oracle-setup.sh` | Turnkey provisioning script automating OS updates, iptables/UFW firewall unblocking, Docker installation, directory creation (`/opt/notifs`), and initial ACME challenge proxy. | One-command setup on Oracle Cloud Ubuntu VM. |
+| **Firestore Security Rules** | `deploy/firestore.rules` | Restricts client reads/writes (`allow read, write: if false;`), reserving access exclusively to the server via Admin SDK. | Deployed to Firebase Console. |
+| **Production Deployment Guide** | `deploy/docs/oracle-deploy.md` | Comprehensive step-by-step walkthrough covering VM creation, VCN security rules, DNS setup, SSL issuance, and client connection. | Reference for deployment & operations. |
 | **Pairing API Endpoints** | `server/api/pairings.py` | Generates 6-character claim codes, hashed secrets (`POST /v1/pairings`), validates and claims device tokens (`POST /v1/pairings/{code}/claim`), returns pairing status (`GET /v1/pairings/{id}`), and unpairs (`DELETE /v1/pairings/{id}`). | Backed by `BasePairingStore` and authenticated via `auth.py`. |
 | **Pairing Storage Backends** | `server/store/` | `InMemoryPairingStore` (thread-safe RAM with 5-minute TTL and 5-attempt limit) and `FirestorePairingStore` (cloud-persisted Google Cloud Firestore collection). | Consumed by `pairings.py` and `auth.py`. |
 | **Bearer Authentication** | `server/auth.py` | SHA-256 secret hashing and FastAPI dependency extracting Bearer tokens, looking up active claimed pairings, and routing dynamic FCM tokens to the notifier. | Guards `/v1/samples` and `/v1/pairings/{id}`. |
