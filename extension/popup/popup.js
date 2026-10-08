@@ -1,5 +1,5 @@
 /**
- * Popup script for Download Notifs.
+ * Popup script for Download Notifs (Material 3 Dark Theme).
  * Manages configuration inputs, displays live download status, and allows exporting sample traces.
  */
 
@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isEnabled) {
       chrome.runtime.sendMessage({ type: "CHECK_ACTIVE" });
     }
-    updateBadge(downloadsContainer.querySelectorAll(".download-item").length, isEnabled);
+    updateBadge(downloadsContainer.querySelectorAll(".m3-download-card").length, isEnabled);
   });
 
   // 3. Pairing toggle placeholder
@@ -92,56 +92,65 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (timestamp) {
       const timeStr = new Date(timestamp).toLocaleTimeString();
-      lastSampleTime.textContent = `Last: ${timeStr}`;
+      lastSampleTime.textContent = `Synced: ${timeStr}`;
     }
   }
 
   function updateBadge(activeCount, isEnabled) {
     if (!isEnabled) {
       statusBadge.textContent = "Disabled";
-      statusBadge.className = "badge badge-disabled";
+      statusBadge.className = "m3-badge badge-disabled";
     } else if (activeCount > 0) {
       statusBadge.textContent = "Active";
-      statusBadge.className = "badge badge-active";
+      statusBadge.className = "m3-badge badge-active";
     } else {
       statusBadge.textContent = "Idle";
-      statusBadge.className = "badge badge-idle";
+      statusBadge.className = "m3-badge badge-idle";
     }
     downloadCount.textContent = activeCount;
   }
 
   function renderDownloads(downloads) {
     if (!downloads || downloads.length === 0) {
-      downloadsContainer.innerHTML = '<div class="empty-state">No downloads active in Chrome</div>';
+      downloadsContainer.innerHTML = `
+        <div class="m3-empty-state">
+          <svg class="m3-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span>No active downloads in Chrome</span>
+        </div>
+      `;
       return;
     }
 
     downloadsContainer.innerHTML = "";
     downloads.forEach((dl) => {
-      const itemEl = document.createElement("div");
-      itemEl.className = "download-item";
+      const cardEl = document.createElement("div");
+      cardEl.className = "m3-download-card";
 
       const totalKnown = dl.total_bytes && dl.total_bytes > 0;
       const pct = totalKnown ? Math.round((dl.bytes_downloaded / dl.total_bytes) * 100) : null;
       const currentMB = (dl.bytes_downloaded / (1024 * 1024)).toFixed(1);
       const totalMB = totalKnown ? (dl.total_bytes / (1024 * 1024)).toFixed(1) : "?";
 
-      itemEl.innerHTML = `
-        <div class="download-title-row">
-          <span class="download-name" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</span>
-          <span class="state-tag state-${dl.state}">${dl.state}</span>
+      cardEl.innerHTML = `
+        <div class="m3-download-header">
+          <span class="m3-download-title" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</span>
+          <span class="m3-status-chip chip-${dl.state}">${dl.state}</span>
         </div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill ${totalKnown ? "" : "progress-indeterminate"}" 
+        <div class="m3-progress-track">
+          <div class="m3-progress-indicator ${totalKnown ? "" : "progress-indeterminate"}" 
                style="width: ${totalKnown ? pct : 100}%;"></div>
         </div>
-        <div class="download-stats">
+        <div class="m3-download-footer">
           <span>${currentMB} MB / ${totalMB} MB</span>
           <span>${totalKnown ? `${pct}%` : "Indeterminate"}</span>
         </div>
       `;
 
-      downloadsContainer.appendChild(itemEl);
+      downloadsContainer.appendChild(cardEl);
     });
   }
 

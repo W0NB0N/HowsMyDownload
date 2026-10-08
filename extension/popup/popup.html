@@ -7,64 +7,104 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="card">
-    <header class="header">
-      <div class="title-row">
-        <span class="app-icon">📲</span>
-        <h1 class="title">Download Notifs</h1>
+  <div class="m3-container">
+    <!-- Header -->
+    <header class="m3-header">
+      <div class="m3-brand">
+        <svg class="m3-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span class="m3-title">Download Notifs</span>
       </div>
-      <span id="status-badge" class="badge badge-idle">Idle</span>
+      <span id="status-badge" class="m3-badge badge-idle">Idle</span>
     </header>
 
-    <section class="section">
-      <div class="field-row">
-        <label for="enabled-toggle" class="label-toggle">Enable Sync</label>
-        <label class="switch">
-          <input type="checkbox" id="enabled-toggle" checked>
-          <span class="slider round"></span>
-        </label>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="field">
-        <label for="server-url">Server URL</label>
-        <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" />
-      </div>
-      <div class="field">
-        <label for="pc-name">PC Name</label>
-        <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" />
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-header">
-        <h2>Active Downloads</h2>
-        <span id="download-count" class="count-pill">0</span>
-      </div>
-      <div id="downloads-container" class="downloads-list">
-        <div class="empty-state">No downloads active in Chrome</div>
-      </div>
-    </section>
-
-    <section class="section" id="pairing-section">
-      <div class="section-header">
-        <h2>Phone Pairing</h2>
-      </div>
-      <div class="pairing-box">
-        <div id="pairing-status" class="pairing-status">Not Paired</div>
-        <button id="pair-btn" class="btn btn-secondary">Pair with Phone</button>
-        <div id="qr-container" class="qr-box hidden">
-          <div class="qr-placeholder">QR Pairing will activate in Phase 6</div>
+    <!-- Main Content -->
+    <main class="m3-content">
+      <!-- Sync Switch Card -->
+      <div class="m3-card m3-card-interactive">
+        <div class="m3-switch-row">
+          <div class="m3-label-group">
+            <span class="m3-label-title">Mirror Downloads</span>
+            <span class="m3-label-sub">Sync progress to mobile notification</span>
+          </div>
+          <label class="m3-switch">
+            <input type="checkbox" id="enabled-toggle" checked>
+            <span class="m3-switch-track">
+              <span class="m3-switch-thumb"></span>
+            </span>
+          </label>
         </div>
       </div>
-    </section>
 
-    <footer class="footer">
-      <button id="export-trace-btn" class="btn btn-link" title="Export recorded samples as JSON for testing">
-        💾 Export Sample Trace
+      <!-- Config Inputs -->
+      <div class="m3-input-group">
+        <div class="m3-text-field">
+          <label for="server-url">Server Endpoint</label>
+          <div class="m3-input-wrapper">
+            <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" autocomplete="off" />
+          </div>
+        </div>
+        <div class="m3-text-field">
+          <label for="pc-name">Device Name</label>
+          <div class="m3-input-wrapper">
+            <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" autocomplete="off" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Downloads Section -->
+      <section class="m3-section">
+        <div class="m3-section-title-row">
+          <span class="m3-section-title">Active Transfers</span>
+          <span id="download-count" class="m3-pill">0</span>
+        </div>
+        <div id="downloads-container" class="m3-downloads-list">
+          <div class="m3-empty-state">
+            <svg class="m3-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>No active downloads in Chrome</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pairing Section -->
+      <section class="m3-section">
+        <div class="m3-card m3-pairing-card">
+          <div class="m3-pairing-header">
+            <div class="m3-label-group">
+              <span class="m3-label-title">Mobile Pairing</span>
+              <span id="pairing-status" class="m3-label-sub">Ready to pair with Android</span>
+            </div>
+            <button id="pair-btn" class="m3-btn m3-btn-tonal" type="button">
+              <span>Pair Device</span>
+            </button>
+          </div>
+          <div id="qr-container" class="m3-qr-container hidden">
+            <div class="m3-qr-placeholder">
+              <span>QR code pairing unlocks in Phase 6</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="m3-footer">
+      <button id="export-trace-btn" class="m3-btn-text" type="button" title="Download recorded JSON samples for offline testing">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Export Trace JSON</span>
       </button>
-      <span id="last-sample-time" class="timestamp"></span>
+      <span id="last-sample-time" class="m3-timestamp"></span>
     </footer>
   </div>
 
