@@ -181,6 +181,10 @@ class NotificationHelper(private val context: Context) {
         notificationManager.cancel(getNotificationId(downloadId))
     }
 
+    fun cancelAll() {
+        notificationManager.cancelAll()
+    }
+
     fun showGroupSummary(activeCount: Int, totalSpeedBytes: Long, pcName: String = "Desktop-PC") {
         if (activeCount <= 1) {
             notificationManager.cancel(SUMMARY_ID)
