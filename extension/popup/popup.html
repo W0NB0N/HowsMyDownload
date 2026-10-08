@@ -7,104 +7,113 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="m3-container">
+  <div class="terminal-card">
     <!-- Header -->
-    <header class="m3-header">
-      <div class="m3-brand">
-        <svg class="m3-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <span class="m3-title">Download Notifs</span>
+    <header class="header">
+      <div class="title-row">
+        <div class="pixel-icon" aria-hidden="true">
+          <!-- 11x11 pixel logo -->
+          <svg viewBox="0 0 11 11" width="18" height="18" shape-rendering="crispEdges">
+            <rect width="11" height="11" fill="#141419" rx="2" />
+            <rect x="1" y="1" width="3" height="3" fill="#8a05ff" />
+            <rect x="7" y="1" width="3" height="3" fill="#8a05ff" />
+            <rect x="4" y="1" width="3" height="1" fill="#61cf92" />
+            <rect x="5" y="2" width="1" height="6" fill="#61cf92" />
+            <rect x="4" y="5" width="3" height="1" fill="#61cf92" />
+            <rect x="3" y="6" width="5" height="1" fill="#61cf92" />
+            <rect x="2" y="7" width="7" height="1" fill="#61cf92" />
+            <rect x="1" y="9" width="9" height="1" fill="#8a05ff" />
+          </svg>
+        </div>
+        <div class="title-text">
+          <span class="prompt-prefix">$</span>
+          <span class="app-name">notifs</span>
+          <span class="version-tag">v0.1</span>
+        </div>
       </div>
-      <span id="status-badge" class="m3-badge badge-idle">Idle</span>
+      <div id="status-badge" class="badge badge-idle">
+        <span class="status-dot"></span>
+        <span class="status-label">IDLE</span>
+      </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="m3-content">
-      <!-- Sync Switch Card -->
-      <div class="m3-card m3-card-interactive">
-        <div class="m3-switch-row">
-          <div class="m3-label-group">
-            <span class="m3-label-title">Mirror Downloads</span>
-            <span class="m3-label-sub">Sync progress to mobile notification</span>
-          </div>
-          <label class="m3-switch">
-            <input type="checkbox" id="enabled-toggle" checked>
-            <span class="m3-switch-track">
-              <span class="m3-switch-thumb"></span>
-            </span>
-          </label>
+    <!-- Sync Toggle -->
+    <section class="section compact">
+      <div class="field-row">
+        <div class="label-with-icon">
+          <span class="cli-flag">--sync</span>
+          <span class="cli-desc">background tracking</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="enabled-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Config Fields -->
+    <section class="section">
+      <div class="field">
+        <label for="server-url"><span class="cli-flag">--server</span> <span class="cli-dim">URL</span></label>
+        <div class="input-wrapper">
+          <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" autocomplete="off" />
         </div>
       </div>
-
-      <!-- Config Inputs -->
-      <div class="m3-input-group">
-        <div class="m3-text-field">
-          <label for="server-url">Server Endpoint</label>
-          <div class="m3-input-wrapper">
-            <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" autocomplete="off" />
-          </div>
-        </div>
-        <div class="m3-text-field">
-          <label for="pc-name">Device Name</label>
-          <div class="m3-input-wrapper">
-            <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" autocomplete="off" />
-          </div>
+      <div class="field">
+        <label for="pc-name"><span class="cli-flag">--client</span> <span class="cli-dim">hostname</span></label>
+        <div class="input-wrapper">
+          <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" autocomplete="off" />
         </div>
       </div>
+    </section>
 
-      <!-- Active Downloads Section -->
-      <section class="m3-section">
-        <div class="m3-section-title-row">
-          <span class="m3-section-title">Active Transfers</span>
-          <span id="download-count" class="m3-pill">0</span>
+    <!-- Active Downloads Monitor -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="cli-flag">--active</span>
+          <span class="cli-desc">downloads</span>
         </div>
-        <div id="downloads-container" class="m3-downloads-list">
-          <div class="m3-empty-state">
-            <svg class="m3-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <span>No active downloads in Chrome</span>
-          </div>
+        <span id="download-count" class="count-pill">0</span>
+      </div>
+      <div id="downloads-container" class="downloads-list">
+        <div class="empty-state">
+          <span class="cli-dim">// no transfers in progress</span>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- Pairing Section -->
-      <section class="m3-section">
-        <div class="m3-card m3-pairing-card">
-          <div class="m3-pairing-header">
-            <div class="m3-label-group">
-              <span class="m3-label-title">Mobile Pairing</span>
-              <span id="pairing-status" class="m3-label-sub">Ready to pair with Android</span>
-            </div>
-            <button id="pair-btn" class="m3-btn m3-btn-tonal" type="button">
-              <span>Pair Device</span>
-            </button>
-          </div>
-          <div id="qr-container" class="m3-qr-container hidden">
-            <div class="m3-qr-placeholder">
-              <span>QR code pairing unlocks in Phase 6</span>
-            </div>
-          </div>
+    <!-- Pairing Box -->
+    <section class="section" id="pairing-section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="cli-flag">--pair</span>
+          <span class="cli-desc">mobile relay</span>
         </div>
-      </section>
-    </main>
+        <span id="pairing-status" class="pairing-status-badge">UNPAIRED</span>
+      </div>
+      <div class="pairing-box">
+        <button id="pair-btn" class="btn btn-primary">
+          <svg viewBox="0 0 11 11" width="11" height="11" class="btn-pixel-icon" shape-rendering="crispEdges">
+            <rect x="3" y="1" width="5" height="4" fill="#61cf92" />
+            <rect x="4" y="2" width="3" height="3" fill="#141419" />
+            <rect x="2" y="5" width="7" height="5" fill="#8a05ff" />
+            <rect x="5" y="7" width="1" height="2" fill="#61cf92" />
+          </svg>
+          <span>pair device</span>
+        </button>
+        <div id="qr-container" class="qr-box hidden">
+          <div class="qr-placeholder">// qr handshake active in phase 6</div>
+        </div>
+      </div>
+    </section>
 
     <!-- Footer -->
-    <footer class="m3-footer">
-      <button id="export-trace-btn" class="m3-btn-text" type="button" title="Download recorded JSON samples for offline testing">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <span>Export Trace JSON</span>
+    <footer class="footer">
+      <button id="export-trace-btn" class="btn btn-ghost" title="Export recorded JSON sample trace for testing">
+        <span class="cli-prompt">&gt;</span> export trace
       </button>
-      <span id="last-sample-time" class="m3-timestamp"></span>
+      <span id="last-sample-time" class="timestamp">--:--:--</span>
     </footer>
   </div>
 

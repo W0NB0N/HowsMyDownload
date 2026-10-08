@@ -68,3 +68,24 @@ graph TD
 - **FCM Data Delivery**: Defined in `docs/protocol.md#2` (high-priority FCM data message).
 - **LAN WebSocket**: Defined in `docs/protocol.md#3` (`/v1/ws`).
 - **Pairing**: Defined in `docs/protocol.md#4` (ephemeral 6-digit code + hash-stored bearer secret).
+
+---
+
+## 4. Design System & Theme Tokens (Render-inspired Dark Terminal)
+
+Applied across Chrome Extension, Android Native UI, and Notifications:
+
+| Token | Hex / Value | Usage |
+|---|---|---|
+| `--bg-canvas` | `#09090c` / `#000000` | Deep terminal black background |
+| `--bg-card` | `#111116` / `#141419` | Surface containers & cards |
+| `--border-subtle` | `#23232c` | Minimalist dark borders |
+| `--purple-brand` | `#8a05ff` | Primary action accent, focus glow, badge outlines |
+| `--purple-light` | `#c084fc` | Command flag prefixes, completed download state |
+| `--green-neon` | `#61cf92` | Active download state, pulsing status LED, speed highlights |
+| `--text-white` | `#ffffff` | Primary titles, filenames, terminal commands |
+| `--text-dim` | `#a1a1aa` | Secondary stats, labels, progress details |
+| `--text-muted` | `#52525b` | Comments, inactive indicators, timestamps |
+| **Typography** | `Monospace / Code` | `ui-monospace, "JetBrains Mono", Menlo, Consolas` |
+| **Iconography** | `11x11 Pixel Grid` | Custom pixel-matrix block glyphs (zero emojis) |
+
