@@ -1,6 +1,7 @@
 /**
- * Popup script for Download Notifs (Material 3 Dark Theme).
+ * Popup script for Download Notifs.
  * Manages configuration inputs, displays live download status, and allows exporting sample traces.
+ * Terminal Dark Theme Edition.
  */
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -45,7 +46,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isEnabled) {
       chrome.runtime.sendMessage({ type: "CHECK_ACTIVE" });
     }
-    updateBadge(downloadsContainer.querySelectorAll(".m3-download-card").length, isEnabled);
+    updateBadge(downloadsContainer.querySelectorAll(".download-item").length, isEnabled);
   });
 
   // 3. Pairing toggle placeholder
@@ -57,7 +58,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   exportTraceBtn.addEventListener("click", async () => {
     const { sampleHistory = [] } = await chrome.storage.local.get("sampleHistory");
     if (sampleHistory.length === 0) {
-      alert("No download sample trace recorded yet. Start a download first!");
+      alert("No sample trace recorded yet. Start a download first.");
       return;
     }
 
@@ -91,66 +92,61 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateBadge(downloads.length, isEnabled);
 
     if (timestamp) {
-      const timeStr = new Date(timestamp).toLocaleTimeString();
-      lastSampleTime.textContent = `Synced: ${timeStr}`;
+      const d = new Date(timestamp);
+      const timeStr = d.toTimeString().split(" ")[0]; // HH:MM:SS
+      lastSampleTime.textContent = timeStr;
     }
   }
 
   function updateBadge(activeCount, isEnabled) {
+    statusBadge.innerHTML = '<span class="status-dot"></span><span class="status-label"></span>';
+    const label = statusBadge.querySelector(".status-label");
+    
     if (!isEnabled) {
-      statusBadge.textContent = "Disabled";
-      statusBadge.className = "m3-badge badge-disabled";
+      label.textContent = "DISABLED";
+      statusBadge.className = "badge badge-disabled";
     } else if (activeCount > 0) {
-      statusBadge.textContent = "Active";
-      statusBadge.className = "m3-badge badge-active";
+      label.textContent = "ACTIVE";
+      statusBadge.className = "badge badge-active";
     } else {
-      statusBadge.textContent = "Idle";
-      statusBadge.className = "m3-badge badge-idle";
+      label.textContent = "IDLE";
+      statusBadge.className = "badge badge-idle";
     }
     downloadCount.textContent = activeCount;
   }
 
   function renderDownloads(downloads) {
     if (!downloads || downloads.length === 0) {
-      downloadsContainer.innerHTML = `
-        <div class="m3-empty-state">
-          <svg class="m3-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <span>No active downloads in Chrome</span>
-        </div>
-      `;
+      downloadsContainer.innerHTML = '<div class="empty-state"><span class="cli-dim">// no transfers in progress</span></div>';
       return;
     }
 
     downloadsContainer.innerHTML = "";
     downloads.forEach((dl) => {
-      const cardEl = document.createElement("div");
-      cardEl.className = "m3-download-card";
+      const itemEl = document.createElement("div");
+      itemEl.className = "download-item";
 
       const totalKnown = dl.total_bytes && dl.total_bytes > 0;
       const pct = totalKnown ? Math.round((dl.bytes_downloaded / dl.total_bytes) * 100) : null;
       const currentMB = (dl.bytes_downloaded / (1024 * 1024)).toFixed(1);
       const totalMB = totalKnown ? (dl.total_bytes / (1024 * 1024)).toFixed(1) : "?";
 
-      cardEl.innerHTML = `
-        <div class="m3-download-header">
-          <span class="m3-download-title" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</span>
-          <span class="m3-status-chip chip-${dl.state}">${dl.state}</span>
+      itemEl.innerHTML = `
+        <div class="download-title-row">
+          <span class="download-name" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</span>
+          <span class="state-tag state-${dl.state}">${dl.state}</span>
         </div>
-        <div class="m3-progress-track">
-          <div class="m3-progress-indicator ${totalKnown ? "" : "progress-indeterminate"}" 
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill ${totalKnown ? "" : "progress-indeterminate"}" 
                style="width: ${totalKnown ? pct : 100}%;"></div>
         </div>
-        <div class="m3-download-footer">
-          <span>${currentMB} MB / ${totalMB} MB</span>
-          <span>${totalKnown ? `${pct}%` : "Indeterminate"}</span>
+        <div class="download-stats">
+          <span>${currentMB}MB / ${totalMB}MB</span>
+          <span class="download-stats-highlight">${totalKnown ? `${pct}%` : "LIVE"}</span>
         </div>
       `;
 
-      downloadsContainer.appendChild(cardEl);
+      downloadsContainer.appendChild(itemEl);
     });
   }
 
