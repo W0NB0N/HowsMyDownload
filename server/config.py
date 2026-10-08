@@ -35,12 +35,21 @@ class Settings(BaseSettings):
     # Firebase credentials (used in Phase 5+)
     GOOGLE_APPLICATION_CREDENTIALS: str | None = Field(
         default="server/service-account.json",
-        description="Path to Firebase service account JSON"
+        description="Path to Firebase service account JSON",
     )
     TEST_FCM_TOKEN: str | None = Field(
         default=None,
-        description="Static device token for dev testing"
+        description="Static device token for dev testing",
     )
+    FCM_TOKEN: str | None = Field(
+        default=None,
+        description="Alias for TEST_FCM_TOKEN",
+    )
+
+    @property
+    def target_fcm_token(self) -> str | None:
+        """Returns the configured FCM token (checking TEST_FCM_TOKEN or FCM_TOKEN)."""
+        return self.FCM_TOKEN or self.TEST_FCM_TOKEN
 
 
 settings = Settings()

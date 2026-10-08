@@ -1,0 +1,71 @@
+"""Abstract base class and models for pairing storage."""
+
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+class PairingRecord(BaseModel):
+    """Database entity representing a device pairing session and credentials."""
+    model_config = ConfigDict(extra="ignore")
+
+    pairing_id: str = Field(..., description="Unique UUID for this pairing")
+    code: str = Field(..., description="Short alphanumeric claim code (e.g. 6 chars)")
+    secret_hash: str = Field(..., description="SHA-256 hash of the bearer token secret")
+    pc_name: str = Field(default="Desktop-PC", description="Client hostname")
+    fcm_token: str | None = Field(default=None, description="Paired mobile device FCM token")
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime = Field(...)
+    claimed_at: datetime | None = None
+    claim_attempts: int = Field(default=0, ge=0)
+    is_claimed: bool = Field(default=False)
+
+    @property
+    def is_expired(self) -> bool:
+        return utc_now() > self.expires_at
+
+
+class BasePairingStore(ABC):
+    """Abstract interface for storing and querying device pairings."""
+
+    @abstractmethod
+    async def create_pairing(
+        self,
+        pairing_id: str,
+        code: str,
+        secret_hash: str,
+        pc_name: str,
+        expires_in_sec: int = 300,
+    ) -> PairingRecord:
+        """Stores a new pairing code record with an expiration window."""
+        pass
+
+    @abstractmethod
+    async def get_pairing(self, pairing_id: str) -> PairingRecord | None:
+        """Retrieves a pairing record by its pairing_id."""
+        pass
+
+    @abstractmethod
+    async def get_pairing_by_code(self, code: str) -> PairingRecord | None:
+        """Retrieves a pairing record by its ephemeral claim code."""
+        pass
+
+    @abstractmethod
+    async def get_pairing_by_secret_hash(self, secret_hash: str) -> PairingRecord | None:
+        """Retrieves a pairing record by the SHA-256 hash of its bearer secret."""
+        pass
+
+    @abstractmethod
+    async def claim_pairing(self, code: str, fcm_token: str) -> PairingRecord | None:
+        """Attempts to claim a pairing code using the mobile device's FCM token."""
+        pass
+
+    @abstractmethod
+    async def delete_pairing(self, pairing_id: str) -> bool:
+        """Deletes/unpairs an active pairing."""
+        pass

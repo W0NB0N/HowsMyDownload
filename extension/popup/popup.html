@@ -43,10 +43,17 @@
     <!-- Config Fields -->
     <section class="section">
       <div class="field">
-        <label for="server-url"><span class="cli-flag">--server</span> <span class="cli-dim">URL</span></label>
+        <div class="field-label-row">
+          <label for="server-url"><span class="cli-flag">--server</span> <span class="cli-dim">URL</span></label>
+          <span id="server-status-pill" class="server-pill pill-checking">
+            <span class="pill-dot"></span>
+            <span class="pill-text">CHECKING</span>
+          </span>
+        </div>
         <div class="input-wrapper">
           <input type="text" id="server-url" placeholder="http://localhost:8000" spellcheck="false" autocomplete="off" />
         </div>
+        <div id="server-error-text" class="field-error-text hidden"></div>
       </div>
       <div class="field">
         <label for="pc-name"><span class="cli-flag">--client</span> <span class="cli-dim">hostname</span></label>
@@ -72,27 +79,54 @@
       </div>
     </section>
 
-    <!-- Pairing Box -->
+    <!-- Pairing Section -->
     <section class="section" id="pairing-section">
       <div class="section-header">
         <div class="section-title">
           <span class="cli-flag">--pair</span>
           <span class="cli-desc">mobile relay</span>
         </div>
-        <span id="pairing-status" class="pairing-status-badge">UNPAIRED</span>
+        <span id="pairing-status-badge" class="pairing-status-badge status-unpaired">UNPAIRED</span>
       </div>
+
       <div class="pairing-box">
-        <button id="pair-btn" class="btn btn-primary">
-          <svg viewBox="0 0 11 11" width="11" height="11" class="btn-pixel-icon" shape-rendering="crispEdges">
-            <rect x="3" y="1" width="5" height="4" fill="#61cf92" />
-            <rect x="4" y="2" width="3" height="3" fill="#141419" />
-            <rect x="2" y="5" width="7" height="5" fill="#8a05ff" />
-            <rect x="5" y="7" width="1" height="2" fill="#61cf92" />
-          </svg>
-          <span>pair device</span>
-        </button>
+        <!-- Unpaired Action -->
+        <div id="pairing-unpaired-view">
+          <button id="pair-btn" class="btn btn-primary">
+            <svg viewBox="0 0 11 11" width="11" height="11" class="btn-pixel-icon" shape-rendering="crispEdges">
+              <rect x="3" y="1" width="5" height="4" fill="#61cf92" />
+              <rect x="4" y="2" width="3" height="3" fill="#141419" />
+              <rect x="2" y="5" width="7" height="5" fill="#8a05ff" />
+              <rect x="5" y="7" width="1" height="2" fill="#61cf92" />
+            </svg>
+            <span>pair device (qr)</span>
+          </button>
+        </div>
+
+        <!-- Active QR Code View -->
         <div id="qr-container" class="qr-box hidden">
-          <div class="qr-placeholder">// qr handshake active in phase 6</div>
+          <div class="qr-canvas-wrapper">
+            <canvas id="qr-canvas"></canvas>
+          </div>
+          <div class="qr-info">
+            <div class="qr-code-row">
+              <span class="cli-dim">CODE:</span>
+              <span id="qr-code-text" class="qr-code-value">------</span>
+            </div>
+            <div id="qr-expiry-text" class="qr-expiry-label">expires in 5m</div>
+          </div>
+          <button id="qr-cancel-btn" class="btn btn-ghost">cancel</button>
+        </div>
+
+        <!-- Paired View -->
+        <div id="pairing-paired-view" class="paired-details hidden">
+          <div class="paired-row">
+            <span class="paired-led"></span>
+            <span id="paired-device-text" class="paired-title">Paired with Mobile Relay</span>
+          </div>
+          <button id="unpair-btn" class="btn btn-danger">
+            <span>&gt; unpair device</span>
+          </button>
         </div>
       </div>
     </section>
@@ -106,6 +140,7 @@
     </footer>
   </div>
 
+  <script src="qrcode.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

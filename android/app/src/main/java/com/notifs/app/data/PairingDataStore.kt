@@ -1,6 +1,7 @@
 package com.notifs.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -11,11 +12,21 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "notifs_preferences")
 
+data class PairingInfo(
+    val pairingId: String?,
+    val serverUrl: String?,
+    val pcName: String?,
+    val isPaired: Boolean
+)
+
 class PairingDataStore(private val context: Context) {
 
     companion object {
         private val KEY_FCM_TOKEN = stringPreferencesKey("fcm_token")
+        private val KEY_PAIRING_ID = stringPreferencesKey("pairing_id")
+        private val KEY_SERVER_URL = stringPreferencesKey("server_url")
         private val KEY_PAIRED_PC_NAME = stringPreferencesKey("paired_pc_name")
+        private val KEY_IS_PAIRED = booleanPreferencesKey("is_paired")
         private val KEY_LAST_SEQ = intPreferencesKey("last_seq")
         private val KEY_DISMISSED_IDS = stringPreferencesKey("dismissed_download_ids")
     }
@@ -24,8 +35,13 @@ class PairingDataStore(private val context: Context) {
         prefs[KEY_FCM_TOKEN]
     }
 
-    val pairedPcFlow: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[KEY_PAIRED_PC_NAME]
+    val pairingInfoFlow: Flow<PairingInfo> = context.dataStore.data.map { prefs ->
+        PairingInfo(
+            pairingId = prefs[KEY_PAIRING_ID],
+            serverUrl = prefs[KEY_SERVER_URL],
+            pcName = prefs[KEY_PAIRED_PC_NAME],
+            isPaired = prefs[KEY_IS_PAIRED] ?: false
+        )
     }
 
     suspend fun saveFcmToken(token: String) {
@@ -36,6 +52,28 @@ class PairingDataStore(private val context: Context) {
 
     suspend fun getFcmToken(): String? {
         return context.dataStore.data.map { it[KEY_FCM_TOKEN] }.first()
+    }
+
+    suspend fun savePairing(pairingId: String, serverUrl: String, pcName: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PAIRING_ID] = pairingId
+            prefs[KEY_SERVER_URL] = serverUrl
+            prefs[KEY_PAIRED_PC_NAME] = pcName
+            prefs[KEY_IS_PAIRED] = true
+        }
+    }
+
+    suspend fun clearPairing() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_PAIRING_ID)
+            prefs.remove(KEY_SERVER_URL)
+            prefs.remove(KEY_PAIRED_PC_NAME)
+            prefs[KEY_IS_PAIRED] = false
+        }
+    }
+
+    suspend fun getPairingInfo(): PairingInfo {
+        return pairingInfoFlow.first()
     }
 
     suspend fun saveLastSeq(seq: Int) {

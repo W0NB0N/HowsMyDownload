@@ -88,3 +88,34 @@ class SampleResponse(BaseModel):
     status: str = "ok"
     processed: int
     pairing_id: str
+
+
+class CreatePairingRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    pc_name: str = Field(default="Desktop-PC", description="Client hostname/display name")
+
+
+class CreatePairingResponse(BaseModel):
+    pairing_id: str
+    code: str
+    secret: str
+    expires_at: datetime
+
+
+class ClaimPairingRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    fcm_token: str = Field(..., description="Firebase Cloud Messaging device token")
+
+
+class ClaimPairingResponse(BaseModel):
+    status: str = "ok"
+    pairing_id: str
+    pc_name: str
+
+
+class PairingStatusResponse(BaseModel):
+    pairing_id: str
+    is_claimed: bool
+    pc_name: str
+    created_at: datetime
+    claimed_at: datetime | None = None

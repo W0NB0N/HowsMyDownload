@@ -1,9 +1,11 @@
-"""Sample ingestion API router."""
+"""Sample ingestion API router with Bearer token authentication."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from server.auth import get_authenticated_pairing
 from server.schemas import SamplePayload, SampleResponse
+from server.store.base import PairingRecord
 from server.tracker.manager import TrackerManager
 
 router = APIRouter(prefix="/v1", tags=["Samples"])
@@ -15,15 +17,24 @@ def get_tracker(request: Request) -> TrackerManager:
 
 
 TrackerDep = Annotated[TrackerManager, Depends(get_tracker)]
+AuthPairingDep = Annotated[PairingRecord, Depends(get_authenticated_pairing)]
 
 
 @router.post("/samples", response_model=SampleResponse)
 async def receive_sample(
     payload: SamplePayload,
     tracker: TrackerDep,
+    auth_record: AuthPairingDep,
 ) -> SampleResponse:
     """Ingests a download sample batch, computes metrics, and dispatches to notifier."""
-    push_payload = await tracker.process_sample(payload)
+    # Ensure pairing_id matches the authenticated pairing
+    payload.pairing_id = auth_record.pairing_id
+    payload.pc_name = auth_record.pc_name or payload.pc_name
+
+    push_payload = await tracker.process_sample(
+        payload,
+        target_token=auth_record.fcm_token,
+    )
     return SampleResponse(
         status="ok",
         processed=len(push_payload.downloads),

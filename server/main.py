@@ -6,19 +6,48 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.health import router as health_router
+from server.api.pairings import router as pairings_router
 from server.api.samples import router as samples_router
 from server.config import settings
+from server.notifier.composite import CompositeNotifier
 from server.notifier.console import ConsoleNotifier
+from server.notifier.fcm import FCMNotifier
+from server.store.firestore import FirestorePairingStore
+from server.store.memory import InMemoryPairingStore
 from server.tracker.manager import TrackerManager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initializes runtime singletons (notifier, tracker) on startup."""
-    # Phase 2: ConsoleNotifier is the active backend
-    notifier = ConsoleNotifier()
+    """Initializes runtime singletons (store, notifier, tracker) on startup."""
+    # 1. Initialize Pairing Store
+    store_type = settings.STORE_TYPE.lower()
+    if store_type == "firestore":
+        try:
+            pairing_store = FirestorePairingStore()
+        except Exception:
+            # Fallback to memory store if firestore unavailable
+            pairing_store = InMemoryPairingStore()
+    else:
+        pairing_store = InMemoryPairingStore()
+
+    # 2. Initialize Notifiers
+    notifier_type = settings.NOTIFIER_TYPE.lower()
+    if notifier_type in ("fcm", "both", "multi"):
+        # Dual output: Console logs + FCM push notifications
+        console_notifier = ConsoleNotifier()
+        fcm_notifier = FCMNotifier(
+            cred_path=settings.GOOGLE_APPLICATION_CREDENTIALS,
+            default_token=settings.target_fcm_token,
+        )
+        notifier = CompositeNotifier([console_notifier, fcm_notifier])
+    else:
+        # Default: Console output only
+        notifier = ConsoleNotifier()
+
     tracker_manager = TrackerManager(notifier=notifier)
 
+    app.state.pairing_store = pairing_store
     app.state.notifier = notifier
     app.state.tracker_manager = tracker_manager
 
@@ -48,6 +77,7 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(health_router)
     app.include_router(samples_router)
+    app.include_router(pairings_router)
 
     return app
 

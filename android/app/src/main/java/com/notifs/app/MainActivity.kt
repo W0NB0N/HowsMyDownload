@@ -30,9 +30,16 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.notifs.app.data.PairingDataStore
+import com.notifs.app.data.PairingInfo
 import com.notifs.app.service.NotificationHelper
+import com.notifs.app.ui.QrScannerScreen
 import com.notifs.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -50,10 +57,33 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = BgCanvas
                 ) {
-                    HomeScreen(
-                        notificationHelper = notificationHelper,
-                        dataStore = dataStore
-                    )
+                    var showScanner by remember { mutableStateOf(false) }
+                    var fcmToken by remember { mutableStateOf<String?>(null) }
+
+                    // Fetch FCM token
+                    LaunchedEffect(Unit) {
+                        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                val token = task.result
+                                fcmToken = token
+                            }
+                        }
+                    }
+
+                    if (showScanner) {
+                        QrScannerScreen(
+                            dataStore = dataStore,
+                            fcmToken = fcmToken,
+                            onDismiss = { showScanner = false },
+                            onPairSuccess = { showScanner = false }
+                        )
+                    } else {
+                        HomeScreen(
+                            notificationHelper = notificationHelper,
+                            dataStore = dataStore,
+                            onOpenScanner = { showScanner = true }
+                        )
+                    }
                 }
             }
         }
@@ -63,11 +93,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun HomeScreen(
     notificationHelper: NotificationHelper,
-    dataStore: PairingDataStore
+    dataStore: PairingDataStore,
+    onOpenScanner: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var fcmToken by remember { mutableStateOf<String?>("Fetching token...") }
+    val pairingInfo by dataStore.pairingInfoFlow.collectAsState(initial = PairingInfo(null, null, null, false))
+
     var hasNotifPermission by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -141,7 +174,7 @@ fun HomeScreen(
                     )
                 }
                 Text(
-                    text = "v0.1.0 · phase 3 standalone",
+                    text = "v0.1.0 · phase 6 pairing active",
                     color = TextMuted,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
@@ -199,7 +232,121 @@ fun HomeScreen(
             }
         }
 
-        // FCM Device Token Card
+        // Pairing Status Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BgCard),
+            border = BorderStroke(1.dp, if (pairingInfo.isPaired) GreenNeon else BorderSubtle),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "--pairing [ pc_relay ]",
+                        color = PurpleLight,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = if (pairingInfo.isPaired) GreenDim else BgElevated,
+                        border = BorderStroke(1.dp, if (pairingInfo.isPaired) GreenNeon else BorderSubtle)
+                    ) {
+                        Text(
+                            text = if (pairingInfo.isPaired) "PAIRED" else "UNPAIRED",
+                            color = if (pairingInfo.isPaired) GreenNeon else TextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                if (pairingInfo.isPaired) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "PC: ${pairingInfo.pcName ?: "Desktop-PC"}",
+                            color = TextWhite,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Server: ${pairingInfo.serverUrl ?: "http://localhost:8000"}",
+                            color = TextDim,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                val sUrl = pairingInfo.serverUrl
+                                val pId = pairingInfo.pairingId
+                                withContext(Dispatchers.IO) {
+                                    if (!sUrl.isNullOrBlank() && !pId.isNullOrBlank()) {
+                                        try {
+                                            val client = OkHttpClient.Builder()
+                                                .connectTimeout(3, TimeUnit.SECONDS)
+                                                .build()
+                                            val req = Request.Builder()
+                                                .url("${sUrl.trimEnd('/')}/v1/pairings/$pId")
+                                                .delete()
+                                                .build()
+                                            client.newCall(req).execute()
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                                dataStore.clearPairing()
+                                Toast.makeText(context, "Unpaired", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BgElevated),
+                        border = BorderStroke(1.dp, StateFailed),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "> unpair pc",
+                            color = StateFailed,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Scan the QR code in the Download Notifs Chrome extension to pair this device.",
+                        color = TextDim,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Button(
+                        onClick = onOpenScanner,
+                        colors = ButtonDefaults.buttonColors(containerColor = PurpleBrand),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "> scan qr code",
+                            color = TextWhite,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // FCM Device Token Card (Dev / Diagnostic)
         Card(
             colors = CardDefaults.cardColors(containerColor = BgCard),
             border = BorderStroke(1.dp, BorderSubtle),
@@ -343,7 +490,7 @@ fun HomeScreen(
 
         // Footer info
         Text(
-            text = "// use tools/fcm_test_sender.py to push live fcm streams from terminal",
+            text = "// scan extension qr to pair or use tools/fcm_test_sender.py",
             color = TextMuted,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
