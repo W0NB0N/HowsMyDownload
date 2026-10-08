@@ -1,6 +1,6 @@
 # Current Build Status & Architecture Topology
 
-*Last Updated: Phase 2 Completion (Backend Server Standalone)*
+*Last Updated: Phase 3 Completion (Android App Standalone + FCM)*
 
 ---
 
@@ -44,7 +44,23 @@ graph TD
     end
 
     subgraph AndroidClient["Android Client (Kotlin / Compose)"]
-        AND_SCAF["Jetpack Compose Shell\n(AGP 8.7, Kotlin 2.0, FCM Service Shell)"]
+        ACT_MAIN["MainActivity.kt & HomeScreen.kt\n(Dark Terminal UI, Token Display, Diagnostics)"]
+        THEME["ui/theme/ (Color.kt, Theme.kt)\n(Render-inspired Dark Palette)"]
+        FCM_SVC["service/NotifFcmService.kt\n(FirebaseMessagingService Handler)"]
+        NOTIF_HLP["service/NotificationHelper.kt\n(Progress & Completion Channels, Groups)"]
+        DISMISS_RCV["service/NotificationDismissReceiver.kt\n(Swipe-away Dismissal Tracking)"]
+        DATA_STORE["data/PairingDataStore.kt\n(Jetpack DataStore Preferences)"]
+
+        ACT_MAIN --> THEME
+        ACT_MAIN --> NOTIF_HLP
+        ACT_MAIN --> DATA_STORE
+        FCM_SVC --> NOTIF_HLP
+        FCM_SVC --> DATA_STORE
+        NOTIF_HLP --> DISMISS_RCV
+    end
+
+    subgraph FirebaseCloud["Google Firebase Cloud Messaging"]
+        FCM_SRV["Firebase Cloud Messaging (FCM)"]
     end
 
     subgraph Deployment["Deployment & DevOps"]
@@ -53,7 +69,7 @@ graph TD
 
     subgraph DevTools["Testing & Verification Tools"]
         TLS_REPLAY["tools/sample_replay.py\n(Sample Stream Replayer)"]
-        TLS_FCM["tools/fcm_test_sender.py\n(FCM Test Pusher)"]
+        TLS_FCM["tools/fcm_test_sender.py\n(FCM Test Stream Pusher)"]
         TLS_EXT["extension/test_poller.js\n(Extension Unit Suite)"]
         TEST_SRV["server/tests/\n(10 Pytest Suites for Server)"]
     end
@@ -61,6 +77,8 @@ graph TD
     POL -.->|Schema v1 Samples| API
     POP -.->|Exported JSON Traces| TLS_REPLAY
     TLS_REPLAY -->|POST /v1/samples| API_SAMPLES
+    TLS_FCM -->|Firebase Admin SDK| FCM_SRV
+    FCM_SRV -->|High-Priority Data Message| FCM_SVC
 ```
 
 ---
@@ -69,20 +87,15 @@ graph TD
 
 | Module / Component | Path | Responsibility & Implemented State | Inter-module Connection |
 |---|---|---|---|
-| **Server App Factory** | `server/main.py` | FastAPI application builder, CORS configuration, lifespan manager initializing `TrackerManager` and active `Notifier`. | Exposes HTTP routes; manages app-level singletons. |
-| **Sample Ingestion API** | `server/api/samples.py` | `POST /v1/samples` route. Ingests raw batch from clients and routes to `TrackerManager`. | Connects external HTTP clients to internal tracking engine. |
-| **Health Check API** | `server/api/health.py` | `GET /health` route returning service health, timestamp, and version `0.1.0`. | Monitoring and uptime verification. |
-| **Schema v1 Models** | `server/schemas.py` | Pydantic v2 data models: `DownloadState` (StrEnum), `SourceDownloadItem`, `SamplePayload`, `EvaluatedDownloadItem`, `PushPayload`. | Shared contract layer across all server modules. |
-| **Server Config** | `server/config.py` | Environment variable resolution via `pydantic-settings` (`NOTIFIER_TYPE`, `STORE_TYPE`, `HOST`, `PORT`, `DEBUG`). | Injected into server components. |
-| **Download Tracker Engine** | `server/tracker/download.py` | Per-download finite state machine enforcing legal state transitions and maintaining byte counts. | Instantiated and managed by `TrackerManager`. |
-| **Computation Engine** | `server/tracker/calculator.py` | Math utilities: `SpeedSmoother` (Exponential Moving Average), `calculate_percentage`, `calculate_eta`. Handles stalls and negative deltas. | Invoked by `TrackedDownload`. |
-| **Tracker Manager** | `server/tracker/manager.py` | Orchestrates multi-download tracking across pairing IDs, manages per-pairing `seq` numbers, cleans up finished downloads, and dispatches to `Notifier`. | Bridges `api/samples.py` with `notifier/`. |
-| **Console Notifier** | `server/notifier/console.py` | Developer-oriented terminal notifier with ANSI color codes (Render-inspired purple `#8a05ff` and green `#61cf92`), ETA, speed, and cross-platform UTF-8 handling. | Receives `PushPayload` from `TrackerManager`. |
-| **Server Unit & API Tests** | `server/tests/` | 10 unit and integration tests covering calculations, state machine transitions, invalid states, multi-download tracking, and HTTP endpoints (100% pass). | Validates `server/` implementation. |
-| **Extension Poller** | `extension/background/poller.js` | Observes `chrome.downloads`, runs 2s polling tick, keepalive alarms, normalizes to Schema v1. | Ingests from Chrome ➔ passes to `api.js`. |
-| **Extension API Client** | `extension/background/api.js` | Dispatches samples, formats telemetry, maintains trace history buffer. | Saves to storage & notifies `popup.js`. |
-| **Extension Popup UI** | `extension/popup/` | Terminal dark UI with 11x11 pixel glyphs, live progress cards, stats, settings, and trace export. | Interacts with `service-worker.js`. |
-| **Replay Testing Tool** | `tools/sample_replay.py` | Replays recorded sample traces against the backend server at 2s intervals. | Verifies server and console rendering in isolation. |
+| **Android Main Activity & Screen** | `android/.../MainActivity.kt` | Jetpack Compose developer UI. Displays live FCM device token with copy action, manages `POST_NOTIFICATIONS` permission prompt, and provides local test notification triggers. | Coordinates `NotificationHelper` and `PairingDataStore`. |
+| **Android Notification Helper** | `android/.../service/NotificationHelper.kt` | Manages notification channels (`downloads` low importance silent, `completions` default audible), builds live progress notifications with speed/ETA/percentage, completion alerts, and multi-download group summaries. | Invoked by `NotifFcmService` and `MainActivity`. |
+| **Android FCM Service** | `android/.../service/NotifFcmService.kt` | Background `FirebaseMessagingService`. Ingests FCM data messages, parses downloads JSON, checks sequence ordering, filters dismissed transfers, and routes to `NotificationHelper`. | Wires Google Play Services FCM to Android Notification system. |
+| **Notification Dismiss Receiver** | `android/.../service/NotificationDismissReceiver.kt` | Broadcast receiver capturing notification swipe-away `deleteIntent` to prevent unwanted re-posts. | Records dismissal in `PairingDataStore`. |
+| **Android Data Store** | `android/.../data/PairingDataStore.kt` | Local preference management using AndroidX DataStore for FCM tokens, last processed sequence numbers, and dismissed download IDs. | Consumed by `NotifFcmService` and `MainActivity`. |
+| **Android Terminal Theme** | `android/.../ui/theme/` | Material 3 Dark theme implementing Render-inspired color palette (`#09090c`, `#8a05ff`, `#61cf92`, `#c084fc`) with monospace typography. | Styles all Android Compose UI components. |
+| **FCM Push Testing Tool** | `tools/fcm_test_sender.py` | Python test tool simulating live FCM push streams directly to physical devices. Supports `--mode normal`, `stall`, `pause`, `fail`, `multi`. | Validates Android FCM reception in isolation. |
+| **Server Engine** | `server/` | FastAPI backend with speed smoothing, ETA math, finite state machine, and console telemetry. | Standalone ingest and processing brain. |
+| **Chrome Extension** | `extension/` | Chrome download monitor with 2s polling, keepalive alarms, and terminal popup. | Standalone source collector. |
 
 ---
 
