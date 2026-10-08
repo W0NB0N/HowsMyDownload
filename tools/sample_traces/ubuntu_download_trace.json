@@ -1,0 +1,106 @@
+[
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:00Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 0,
+        "total_bytes": 6000000000,
+        "state": "starting"
+      }
+    ]
+  },
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:02Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 50000000,
+        "total_bytes": 6000000000,
+        "state": "downloading"
+      }
+    ]
+  },
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:04Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 350000000,
+        "total_bytes": 6000000000,
+        "state": "downloading"
+      }
+    ]
+  },
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:06Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 1500000000,
+        "total_bytes": 6000000000,
+        "state": "downloading"
+      },
+      {
+        "id": "dl-102",
+        "filename": "dataset-weights.tar.gz",
+        "bytes_downloaded": 10000000,
+        "total_bytes": null,
+        "state": "downloading"
+      }
+    ]
+  },
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:08Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 3000000000,
+        "total_bytes": 6000000000,
+        "state": "downloading"
+      },
+      {
+        "id": "dl-102",
+        "filename": "dataset-weights.tar.gz",
+        "bytes_downloaded": 80000000,
+        "total_bytes": null,
+        "state": "downloading"
+      }
+    ]
+  },
+  {
+    "pairing_id": "test-dev-pairing",
+    "source": "chrome",
+    "pc_name": "Desktop-PC",
+    "timestamp": "2026-10-08T12:00:10Z",
+    "downloads": [
+      {
+        "id": "dl-101",
+        "filename": "ubuntu-24.04.1-desktop-amd64.iso",
+        "bytes_downloaded": 6000000000,
+        "total_bytes": 6000000000,
+        "state": "completed"
+      }
+    ]
+  }
+]
