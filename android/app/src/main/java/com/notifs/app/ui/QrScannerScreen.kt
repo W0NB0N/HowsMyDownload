@@ -57,6 +57,7 @@ fun QrScannerScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var isProcessing by remember { mutableStateOf(false) }
+    var lastAttemptTimestamp by remember { mutableLongStateOf(0L) }
     var statusMessage by remember { mutableStateOf("Align QR code inside viewfinder") }
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -117,8 +118,10 @@ fun QrScannerScreen(
             if (hasCameraPermission) {
                 CameraPreviewView(
                     onQrScanned = { rawQrText ->
-                        if (!isProcessing) {
+                        val now = System.currentTimeMillis()
+                        if (!isProcessing && (now - lastAttemptTimestamp > 3000L)) {
                             isProcessing = true
+                            lastAttemptTimestamp = now
                             statusMessage = "Claiming pairing code..."
                             coroutineScope.launch {
                                 handleQrPayload(
@@ -132,6 +135,7 @@ fun QrScannerScreen(
                                     onError = { err ->
                                         statusMessage = "Error: $err"
                                         isProcessing = false
+                                        lastAttemptTimestamp = System.currentTimeMillis()
                                     }
                                 )
                             }
@@ -299,10 +303,10 @@ private suspend fun handleQrPayload(
     onError: (String) -> Unit
 ) {
     withContext(Dispatchers.IO) {
+        var serverUrl = ""
+        var code = ""
+        var pcName = "Desktop-PC"
         try {
-            var serverUrl = ""
-            var code = ""
-            var pcName = "Desktop-PC"
 
             if (rawText.trim().startsWith("{")) {
                 val json = JSONObject(rawText)
@@ -370,8 +374,15 @@ private suspend fun handleQrPayload(
                 }
             }
         } catch (e: Exception) {
+            val msg = e.message ?: "Network error"
+            val displayMsg = if ((msg.contains("Failed to connect", ignoreCase = true) || msg.contains("Connection refused", ignoreCase = true)) && 
+                (serverUrl.contains("localhost") || serverUrl.contains("127.0.0.1"))) {
+                "Cannot reach localhost from phone. Set PC IP or run 'adb reverse tcp:8000 tcp:8000'"
+            } else {
+                msg
+            }
             withContext(Dispatchers.Main) {
-                onError(e.message ?: "Network error")
+                onError(displayMsg)
             }
         }
     }
