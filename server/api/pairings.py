@@ -4,8 +4,9 @@ import secrets
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from server.auth import StoreDep, get_authenticated_pairing, hash_secret
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
+from server.auth import StoreDep, get_authenticated_pairing, hash_secret, security
 from server.schemas import (
     ClaimPairingRequest,
     ClaimPairingResponse,
@@ -100,17 +101,29 @@ async def get_pairing_status(
 async def delete_pairing(
     pairing_id: str,
     store: StoreDep,
-    credentials: AuthDep = None,
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> dict:
     """Unpairs/deletes the pairing session (supports Bearer token or direct unpair)."""
+    record = await store.get_pairing(pairing_id)
+
     if credentials is not None:
         secret_hash = hash_secret(credentials.credentials)
-        record = await store.get_pairing_by_secret_hash(secret_hash)
-        if record and record.pairing_id != pairing_id:
+        auth_rec = await store.get_pairing_by_secret_hash(secret_hash)
+        if auth_rec and auth_rec.pairing_id != pairing_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Unauthorized for this pairing ID",
             )
+        record = record or auth_rec
+
+    # If the pairing was claimed by a phone, push unpair event via FCM
+    if record and record.fcm_token:
+        tracker = getattr(request.app.state, "tracker_manager", None)
+        if tracker and hasattr(tracker, "notifier"):
+            import contextlib
+            with contextlib.suppress(Exception):
+                await tracker.notifier.send_unpair_event(record.fcm_token, pairing_id)
 
     await store.delete_pairing(pairing_id)
     return {"status": "ok", "message": "Pairing deleted successfully"}

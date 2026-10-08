@@ -22,7 +22,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     serverUrl: "http://localhost:8000",
     pcName: "Desktop-PC",
     enabled: true,
-    pairingId: "dev-local-pairing"
+    isPaired: false,
+    pairingId: null,
+    pairingSecret: null
   };
 
   const current = await chrome.storage.local.get(Object.keys(defaults));

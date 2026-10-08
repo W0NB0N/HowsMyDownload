@@ -59,6 +59,18 @@ class NotifFcmService : FirebaseMessagingService() {
 
         Log.d(TAG, "FCM data payload: $data")
 
+        // Check for server-initiated or extension-initiated unpair event
+        if (data["event"] == "unpaired") {
+            val unpairId = data["pairing_id"] ?: ""
+            Log.i(TAG, "Unpair event received via FCM for pairing_id='$unpairId'. Clearing pairing state.")
+            serviceScope.launch {
+                dataStore.clearPairing()
+                resetState()
+                notificationHelper.cancelAll()
+            }
+            return
+        }
+
         val seqStr = data["seq"] ?: "0"
         val seq = seqStr.toIntOrNull() ?: 0
         val pairingId = data["pairing_id"] ?: ""
@@ -98,6 +110,7 @@ class NotifFcmService : FirebaseMessagingService() {
                 val jsonArray = JSONArray(downloadsJsonStr)
                 var activeCount = 0
                 var totalSpeedBytes: Long = 0
+                val uiDownloads = mutableListOf<com.notifs.app.data.AppDownloadItem>()
 
                 for (i in 0 until jsonArray.length()) {
                     val item: JSONObject = jsonArray.getJSONObject(i)
@@ -114,6 +127,27 @@ class NotifFcmService : FirebaseMessagingService() {
                         item.getLong("eta_seconds")
                     } else {
                         null
+                    }
+                    val bytesDownloaded = if (item.has("bytes_downloaded")) item.getLong("bytes_downloaded") else 0L
+                    val totalBytes = if (item.has("total_bytes") && !item.isNull("total_bytes")) {
+                        item.getLong("total_bytes")
+                    } else {
+                        null
+                    }
+
+                    if (state != "erased") {
+                        uiDownloads.add(
+                            com.notifs.app.data.AppDownloadItem(
+                                id = id,
+                                filename = filename,
+                                state = state,
+                                bytesDownloaded = bytesDownloaded,
+                                totalBytes = totalBytes,
+                                percentage = pct,
+                                speedBytesSec = speed,
+                                etaSeconds = eta
+                            )
+                        )
                     }
 
                     when (state) {
@@ -165,6 +199,9 @@ class NotifFcmService : FirebaseMessagingService() {
                         }
                     }
                 }
+
+                // Update active downloads for UI
+                com.notifs.app.data.DownloadRepository.updateDownloads(uiDownloads)
 
                 // Update group summary if multi-download
                 notificationHelper.showGroupSummary(activeCount, totalSpeedBytes, pcName)

@@ -27,3 +27,13 @@ class CompositeNotifier(BaseNotifier):
                 tasks.append(notifier.notify(payload))
 
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def send_unpair_event(self, token: str, pairing_id: str) -> None:
+        """Dispatches unpair event to all child notifiers that support it."""
+        tasks = [
+            notifier.send_unpair_event(token, pairing_id)
+            for notifier in self.notifiers
+            if hasattr(notifier, "send_unpair_event")
+        ]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

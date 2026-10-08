@@ -128,13 +128,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     } finally {
       pairBtn.disabled = false;
       pairBtn.innerHTML = `
-        <svg viewBox="0 0 11 11" width="11" height="11" class="btn-pixel-icon" shape-rendering="crispEdges">
-          <rect x="3" y="1" width="5" height="4" fill="#61cf92" />
-          <rect x="4" y="2" width="3" height="3" fill="#141419" />
-          <rect x="2" y="5" width="7" height="5" fill="#8a05ff" />
-          <rect x="5" y="7" width="1" height="2" fill="#61cf92" />
-        </svg>
-        <span>pair device (qr)</span>
+        <img src="pair-icon.png" width="11" height="11" class="btn-pixel-icon" alt="pair icon" />
+        <span>pair device</span>
       `;
     }
   });
@@ -215,6 +210,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  async function validatePairingSession(serverUrl, pairingId, secret) {
+    try {
+      const cleanUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+      const res = await fetch(`${cleanUrl}/v1/pairings/${pairingId}`, {
+        headers: { "Authorization": `Bearer ${secret}` },
+        signal: AbortSignal.timeout(3000)
+      });
+
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        // Pairing was deleted on server (e.g. by phone)
+        console.warn("[Download Notifs] Server confirmed pairing was revoked. Resetting UI.");
+        await chrome.storage.local.set({
+          isPaired: false,
+          pairingId: null,
+          pairingSecret: null,
+          pairingCode: null
+        });
+        updatePairingUI(false);
+      }
+    } catch {
+      // Ignore network errors on passive check
+    }
+  }
+
   // 4. Export sample trace handler (for dev/testing with tools/sample_replay.py)
   exportTraceBtn.addEventListener("click", async () => {
     const { sampleHistory = [] } = await chrome.storage.local.get("sampleHistory");
@@ -236,10 +255,34 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 5. Live update listener
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "SAMPLE_DISPATCHED" && message.payload) {
-      updateUI(message.payload, enabledToggle.checked, Date.now());
+    if (message.type === "SAMPLE_DISPATCHED") {
+      if (message.payload) {
+        updateUI(message.payload, enabledToggle.checked, Date.now());
+      }
       if (typeof message.serverOnline === "boolean") {
         updateServerStatus(message.serverOnline, message.error);
+      }
+      if (typeof message.isPaired === "boolean") {
+        updatePairingUI(message.isPaired);
+      }
+    }
+  });
+
+  // 6. Reactive storage changes listener (instantly reflects unpair from phone or background worker)
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local") {
+      if (changes.isPaired !== undefined) {
+        updatePairingUI(changes.isPaired.newValue === true);
+      }
+      if (changes.serverOnline !== undefined || changes.lastServerError !== undefined) {
+        chrome.storage.local.get(["serverOnline", "lastServerError"]).then(({ serverOnline, lastServerError }) => {
+          updateServerStatus(serverOnline, lastServerError);
+        });
+      }
+      if (changes.lastSample !== undefined && changes.lastSample.newValue) {
+        chrome.storage.local.get(["enabled", "lastSampleTime"]).then(({ enabled, lastSampleTime }) => {
+          updateUI(changes.lastSample.newValue, enabled, lastSampleTime);
+        });
       }
     }
   });

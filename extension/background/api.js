@@ -38,11 +38,12 @@ export async function checkServerHealth(serverUrl) {
  * @param {Object} sample - The SamplePayload conforming to Schema v1
  */
 export async function sendSample(sample) {
-  const { enabled, serverUrl, pairingSecret, pairingId } = await chrome.storage.local.get({
+  const { enabled, serverUrl, pairingSecret, pairingId, isPaired } = await chrome.storage.local.get({
     enabled: true,
     serverUrl: "http://localhost:8000",
     pairingSecret: null,
-    pairingId: "dev-local-pairing"
+    pairingId: null,
+    isPaired: false
   });
 
   if (!enabled) {
@@ -53,9 +54,6 @@ export async function sendSample(sample) {
   if (pairingId) {
     sample.pairing_id = pairingId;
   }
-
-  const cleanServerUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
-  const targetEndpoint = `${cleanServerUrl}/v1/samples`;
 
   // Always buffer the latest sample in local storage for history/replay & popup
   try {
@@ -71,15 +69,27 @@ export async function sendSample(sample) {
     console.warn("[Download Notifs] Error updating local sample history:", storageErr);
   }
 
+  // If unpaired, don't dispatch to backend (no mobile recipient)
+  if (!isPaired || !pairingSecret) {
+    try {
+      chrome.runtime.sendMessage({
+        type: "SAMPLE_DISPATCHED",
+        payload: sample,
+        isPaired: false
+      }).catch(() => {});
+    } catch {}
+    return;
+  }
+
+  const cleanServerUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+  const targetEndpoint = `${cleanServerUrl}/v1/samples`;
+
   // Build headers
   const headers = {
     "Content-Type": "application/json",
-    "Accept": "application/json"
+    "Accept": "application/json",
+    "Authorization": `Bearer ${pairingSecret}`
   };
-
-  if (pairingSecret) {
-    headers["Authorization"] = `Bearer ${pairingSecret}`;
-  }
 
   // Attempt dispatch to server
   let serverOnline = false;
@@ -101,8 +111,22 @@ export async function sendSample(sample) {
       const timestamp = new Date(sample.timestamp).toLocaleTimeString();
       console.log(`[Download Notifs] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
     } else {
-      dispatchError = `Server responded with HTTP ${res.status}`;
-      console.warn(`[Download Notifs] Server error: ${res.status} ${res.statusText}`);
+      if (res.status === 401) {
+        console.warn("[Download Notifs] Server returned 401 (Pairing revoked). Resetting pairing status.");
+        serverOnline = true;
+        dispatchError = null;
+        await chrome.storage.local.set({
+          isPaired: false,
+          pairingId: null,
+          pairingSecret: null,
+          pairingCode: null,
+          serverOnline: true,
+          lastServerError: null
+        });
+      } else {
+        dispatchError = `Server responded with HTTP ${res.status}`;
+        console.warn(`[Download Notifs] Server error: ${res.status} ${res.statusText}`);
+      }
     }
   } catch (fetchErr) {
     dispatchError = fetchErr.message || "Failed to fetch";
@@ -127,7 +151,8 @@ export async function sendSample(sample) {
       type: "SAMPLE_DISPATCHED",
       payload: sample,
       serverOnline: serverOnline,
-      error: dispatchError
+      error: dispatchError,
+      isPaired: isPaired && (dispatchError === null || !dispatchError.includes("401"))
     }).catch(() => {
       // Ignore when popup is closed
     });
