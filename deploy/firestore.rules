@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Deny all direct client reads/writes.
+    // The server accesses Firestore via the privileged Firebase Admin SDK (service account),
+    // which bypasses client security rules entirely. No web or mobile client should query Firestore directly.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
