@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+
 import httpx
 
 
@@ -11,7 +12,7 @@ def replay(file_path: str, server_url: str, token: str | None = None) -> None:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             samples = json.load(f)
-    except Exception as e:
+    except (OSError, json.JSONDecodeError) as e:
         print(f"Error loading {file_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -26,7 +27,7 @@ def replay(file_path: str, server_url: str, token: str | None = None) -> None:
         try:
             resp = client.post("/v1/samples", json=sample, headers=headers)
             print(f"[{i+1}/{len(samples)}] Status: {resp.status_code} - {resp.text}")
-        except Exception as e:
+        except httpx.HTTPError as e:
             print(f"[{i+1}/{len(samples)}] Failed: {e}")
         time.sleep(2.0)
 

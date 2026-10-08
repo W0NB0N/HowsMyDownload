@@ -32,7 +32,11 @@ class TrackerManager:
         self._seq_map[pairing_id] = seq
         return seq
 
-    async def process_sample(self, sample: SamplePayload) -> PushPayload:
+    async def process_sample(
+        self,
+        sample: SamplePayload,
+        target_token: str | None = None,
+    ) -> PushPayload:
         """Ingests a SamplePayload, updates download states, and triggers notification."""
         async with self._lock:
             now = sample.timestamp.timestamp() if sample.timestamp else time.time()
@@ -68,7 +72,7 @@ class TrackerManager:
             )
 
             # Dispatch to notifier backend
-            await self.notifier.notify(push_payload)
+            await self.notifier.notify(push_payload, target_token=target_token)
 
             # Run periodic cleanup
             self._cleanup_stale(now)

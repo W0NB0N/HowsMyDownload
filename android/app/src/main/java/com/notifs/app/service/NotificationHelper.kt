@@ -13,8 +13,8 @@ import com.notifs.app.R
 class NotificationHelper(private val context: Context) {
 
     companion object {
-        const val CHANNEL_DOWNLOADS = "downloads"
-        const val CHANNEL_COMPLETIONS = "completions"
+        const val CHANNEL_DOWNLOADS = "downloads_v2"
+        const val CHANNEL_COMPLETIONS = "completions_v2"
         const val GROUP_DOWNLOADS = "com.notifs.app.DOWNLOADS_GROUP"
         const val SUMMARY_ID = 0
         const val ACTION_DISMISSED = "com.notifs.app.ACTION_DISMISSED"
@@ -32,16 +32,23 @@ class NotificationHelper(private val context: Context) {
 
     fun createChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // 1. Silent Progress Channel
+            // Delete legacy channels if they exist
+            try {
+                notificationManager.deleteNotificationChannel("downloads")
+                notificationManager.deleteNotificationChannel("completions")
+            } catch (_: Exception) {}
+
+            // 1. Silent Active Progress Channel (Default importance for lockscreen & status bar visibility, but no sound/vibration)
             val downloadsChannel = NotificationChannel(
                 CHANNEL_DOWNLOADS,
                 "Active Downloads",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Live progress bar for in-progress transfers"
                 setShowBadge(false)
                 enableVibration(false)
                 setSound(null, null)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
             // 2. Audible Completion Channel
@@ -53,6 +60,7 @@ class NotificationHelper(private val context: Context) {
                 description = "Alerts when a download finishes or fails"
                 setShowBadge(true)
                 enableVibration(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
 
             notificationManager.createNotificationChannel(downloadsChannel)
@@ -122,6 +130,7 @@ class NotificationHelper(private val context: Context) {
             .setDeleteIntent(pendingDeleteIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setGroup(GROUP_DOWNLOADS)

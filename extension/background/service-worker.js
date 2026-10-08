@@ -11,6 +11,7 @@ import {
   checkActiveDownloads,
   pollAndSample
 } from "./poller.js";
+import { checkServerHealth } from "./api.js";
 
 console.log("[Download Notifs] Service worker starting up.");
 
@@ -61,6 +62,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "CHECK_ACTIVE") {
     checkActiveDownloads().then(() => sendResponse({ status: "ok" }));
+    return true;
+  }
+  if (message.type === "CHECK_HEALTH") {
+    chrome.storage.local.get({ serverUrl: "http://localhost:8000" }).then(({ serverUrl }) => {
+      checkServerHealth(message.serverUrl || serverUrl).then(result => {
+        sendResponse(result);
+      });
+    });
     return true;
   }
 });

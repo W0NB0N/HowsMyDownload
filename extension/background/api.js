@@ -1,58 +1,137 @@
 /**
  * API client module for the Chrome Extension.
- * Handles dispatching download samples and managing local sample history.
+ * Handles dispatching download samples to the backend server and managing local sample history.
  */
 
-const MAX_HISTORY = 50;
+const MAX_HISTORY = 100;
+let pendingRetrySample = null;
 
 /**
- * Dispatches a formatted sample payload.
- * In Phase 1 (Standalone), logs the sample to console and saves it to local storage.
- * In Phase 4+, will POST to the backend server.
+ * Checks the connectivity and health of the backend server.
+ * 
+ * @param {string} serverUrl - Base URL of the backend server
+ * @returns {Promise<{online: boolean, data?: Object, error?: string}>}
+ */
+export async function checkServerHealth(serverUrl) {
+  const url = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${url}/health`, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(3000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return { online: true, data };
+    }
+    return { online: false, error: `HTTP ${res.status}: ${res.statusText}` };
+  } catch (err) {
+    return { online: false, error: err.message || "Connection refused" };
+  }
+}
+
+/**
+ * Dispatches a formatted sample payload to the backend server via POST /v1/samples.
+ * Gracefully handles offline states, includes Bearer authentication, and buffers the latest sample.
  * 
  * @param {Object} sample - The SamplePayload conforming to Schema v1
  */
 export async function sendSample(sample) {
-  const { enabled, serverUrl } = await chrome.storage.local.get({
+  const { enabled, serverUrl, pairingSecret, pairingId } = await chrome.storage.local.get({
     enabled: true,
-    serverUrl: "http://localhost:8000"
+    serverUrl: "http://localhost:8000",
+    pairingSecret: null,
+    pairingId: "dev-local-pairing"
   });
 
   if (!enabled) {
     return;
   }
 
-  // Phase 1: Output detailed log in Service Worker console
-  const timestamp = new Date(sample.timestamp).toLocaleTimeString();
-  console.group(`[Download Notifs] Sample @ ${timestamp} (${sample.downloads.length} active)`);
-  console.log("Payload:", sample);
-  
-  sample.downloads.forEach(dl => {
-    const totalStr = dl.total_bytes ? `${(dl.total_bytes / (1024 * 1024)).toFixed(1)} MB` : "Unknown";
-    const currentStr = `${(dl.bytes_downloaded / (1024 * 1024)).toFixed(1)} MB`;
-    console.log(` -> [${dl.state.toUpperCase()}] ${dl.filename} (${currentStr} / ${totalStr}) [id: ${dl.id}]`);
-  });
-  console.groupEnd();
+  // Inject active pairing_id if available
+  if (pairingId) {
+    sample.pairing_id = pairingId;
+  }
 
-  // Save latest sample and append to history for popup & export/replay
+  const cleanServerUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+  const targetEndpoint = `${cleanServerUrl}/v1/samples`;
+
+  // Always buffer the latest sample in local storage for history/replay & popup
   try {
     const { sampleHistory = [] } = await chrome.storage.local.get("sampleHistory");
     const updatedHistory = [...sampleHistory, sample].slice(-MAX_HISTORY);
-    
+
     await chrome.storage.local.set({
       lastSample: sample,
       sampleHistory: updatedHistory,
       lastSampleTime: Date.now()
     });
+  } catch (storageErr) {
+    console.warn("[Download Notifs] Error updating local sample history:", storageErr);
+  }
 
-    // Notify any open popup UI
+  // Build headers
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  };
+
+  if (pairingSecret) {
+    headers["Authorization"] = `Bearer ${pairingSecret}`;
+  }
+
+  // Attempt dispatch to server
+  let serverOnline = false;
+  let dispatchError = null;
+
+  try {
+    const res = await fetch(targetEndpoint, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(sample),
+      signal: AbortSignal.timeout(4000)
+    });
+
+    if (res.ok) {
+      serverOnline = true;
+      pendingRetrySample = null;
+      const resData = await res.json();
+
+      const timestamp = new Date(sample.timestamp).toLocaleTimeString();
+      console.log(`[Download Notifs] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
+    } else {
+      dispatchError = `Server responded with HTTP ${res.status}`;
+      console.warn(`[Download Notifs] Server error: ${res.status} ${res.statusText}`);
+    }
+  } catch (fetchErr) {
+    dispatchError = fetchErr.message || "Failed to fetch";
+    pendingRetrySample = sample;
+    console.warn(`[Download Notifs] Backend unreachable at ${targetEndpoint} (${dispatchError})`);
+  }
+
+  // Update server connection status in storage
+  try {
+    await chrome.storage.local.set({
+      serverOnline: serverOnline,
+      lastServerError: dispatchError,
+      lastServerCheckTime: Date.now()
+    });
+  } catch {
+    // Ignore storage errors
+  }
+
+  // Notify any active popup UI
+  try {
     chrome.runtime.sendMessage({
       type: "SAMPLE_DISPATCHED",
-      payload: sample
+      payload: sample,
+      serverOnline: serverOnline,
+      error: dispatchError
     }).catch(() => {
-      // Ignore error if popup is closed
+      // Ignore when popup is closed
     });
-  } catch (err) {
-    console.error("[Download Notifs] Error saving sample state:", err);
+  } catch {
+    // Ignore message routing errors
   }
 }

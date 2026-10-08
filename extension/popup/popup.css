@@ -201,11 +201,72 @@ body {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+}
+
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .field label {
   font-size: 11px;
+}
+
+.server-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  letter-spacing: 0.5px;
+}
+
+.pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.pill-online {
+  border-color: rgba(97, 207, 146, 0.3);
+  background: rgba(97, 207, 146, 0.08);
+  color: var(--green-neon);
+}
+
+.pill-online .pill-dot {
+  background: var(--green-neon);
+  box-shadow: 0 0 6px var(--green-neon);
+}
+
+.pill-offline {
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
+
+.pill-offline .pill-dot {
+  background: #f87171;
+}
+
+.pill-checking {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.pill-checking .pill-dot {
+  background: var(--text-muted);
+}
+
+.field-error-text {
+  color: #f87171;
+  font-size: 10px;
+  padding-left: 2px;
 }
 
 .field-row {
@@ -413,83 +474,121 @@ input:checked + .slider:before {
 /* Pairing Section */
 .pairing-status-badge {
   font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+
+.status-unpaired {
   color: var(--text-muted);
   background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  padding: 1px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
+}
+
+.status-paired {
+  color: var(--green-neon);
+  background: rgba(97, 207, 146, 0.1);
+  border-color: rgba(97, 207, 146, 0.3);
 }
 
 .pairing-box {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  padding: 8px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-/* Buttons */
-.btn {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background-color 0.15s, border-color 0.15s;
-  text-transform: lowercase;
-}
-
-.btn-primary {
-  background: #191426;
-  border: 1px solid var(--purple-brand);
-  color: var(--purple-light);
-}
-
-.btn-primary:hover {
-  background: var(--purple-brand);
-  color: var(--text-white);
-  box-shadow: 0 0 10px var(--purple-glow);
-}
-
-.btn-pixel-icon {
-  flex-shrink: 0;
-}
-
-.btn-ghost {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 10px;
-  padding: 2px 4px;
-}
-
-.btn-ghost:hover {
-  color: var(--green-neon);
-}
-
-.cli-prompt {
-  color: var(--green-neon);
-  font-weight: 700;
+  gap: 8px;
 }
 
 .qr-box {
-  padding: 8px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
 }
 
-.qr-placeholder {
-  font-size: 10px;
+.qr-canvas-wrapper {
+  padding: 6px;
+  background: #ffffff;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+}
+
+.qr-canvas-wrapper canvas {
+  image-rendering: pixelated;
+  display: block;
+}
+
+.qr-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.qr-code-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.qr-code-value {
+  color: var(--green-neon);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+}
+
+.qr-expiry-label {
   color: var(--text-muted);
+  font-size: 10px;
+}
+
+.paired-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paired-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paired-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green-neon);
+  box-shadow: 0 0 6px var(--green-neon);
+}
+
+.paired-title {
+  color: var(--text-white);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.btn-danger {
+  background: #201111;
+  border: 1px solid #7f1d1d;
+  color: #f87171;
+}
+
+.btn-danger:hover {
+  background: #7f1d1d;
+  color: #ffffff;
 }
 
 .hidden {

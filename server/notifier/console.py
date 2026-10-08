@@ -1,15 +1,15 @@
 """Console Notifier with developer-focused terminal color formatting."""
 
+import contextlib
 import sys
+
 from server.notifier.base import BaseNotifier
 from server.schemas import DownloadState, PushPayload
 
 # Reconfigure stdout for UTF-8 on Windows if possible
 if hasattr(sys.stdout, "reconfigure"):
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 # ANSI Color Codes (Matching Render-inspired Dark Terminal Theme)
 CLR_RESET = "\033[0m"
@@ -63,7 +63,7 @@ class ConsoleNotifier(BaseNotifier):
     def __init__(self, stream=None) -> None:
         self.stream = stream or sys.stdout
 
-    async def notify(self, payload: PushPayload) -> None:
+    async def notify(self, payload: PushPayload, target_token: str | None = None) -> None:
         time_str = payload.sent_at.strftime("%H:%M:%S")
         prefix = (
             f"{CLR_PURPLE}[SEQ #{payload.seq:03d} | {time_str}]{CLR_RESET} "

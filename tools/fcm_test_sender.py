@@ -9,8 +9,9 @@ import json
 import os
 import sys
 import time
+
 import firebase_admin
-from firebase_admin import credentials, messaging
+from firebase_admin import credentials, exceptions, messaging
 
 
 def send_test_stream(
@@ -77,24 +78,33 @@ def send_test_stream(
 
         # Multi mode: add 2 extra concurrent downloads
         if mode == "multi":
-            dl2_bytes = min(current_bytes // 2, 500000000)
+            dl2_total = 500000000
+            dl2_bytes = min(current_bytes // 2, dl2_total)
+            dl2_pct = round((dl2_bytes / dl2_total) * 100, 1)
+            dl2_state = "completed" if dl2_bytes >= dl2_total else "downloading"
+            dl2_speed = speed // 2 if dl2_state == "downloading" else 0
+            dl2_eta = max(0, (dl2_total - dl2_bytes) // max(1, speed // 2)) if dl2_state == "downloading" else 0
+
             downloads_list.append({
                 "id": "test-dl-2",
                 "filename": "cuda_toolkit_installer.run",
-                "percentage": round((dl2_bytes / 500000000) * 100, 1),
-                "speed": speed // 2,
-                "eta_seconds": max(0, (500000000 - dl2_bytes) // max(1, speed // 2)),
-                "state": "downloading",
+                "percentage": dl2_pct,
+                "speed": dl2_speed,
+                "eta_seconds": dl2_eta,
+                "state": dl2_state,
                 "bytes_downloaded": dl2_bytes,
-                "total_bytes": 500000000,
+                "total_bytes": dl2_total,
             })
+
+            # dl3 simulates an indeterminate live stream (no total size / percentage)
+            dl3_state = "completed" if i == steps else "downloading"
             downloads_list.append({
                 "id": "test-dl-3",
                 "filename": "stream-recording.mkv",
                 "percentage": None,
-                "speed": 5000000,
+                "speed": 5000000 if dl3_state == "downloading" else 0,
                 "eta_seconds": None,
-                "state": "downloading",
+                "state": dl3_state,
                 "bytes_downloaded": current_bytes // 3,
                 "total_bytes": None,
             })
@@ -116,7 +126,7 @@ def send_test_stream(
         try:
             response = messaging.send(msg)
             print(f"[{i}/{steps}] Seq #{seq} ({pct}%) -> {state.upper()} -> MsgId: {response}")
-        except Exception as e:
+        except (exceptions.FirebaseError, ValueError, OSError) as e:
             print(f"[{i}/{steps}] Error sending FCM push: {e}")
 
         seq += 1

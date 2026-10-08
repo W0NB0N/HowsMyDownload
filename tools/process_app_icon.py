@@ -22,7 +22,6 @@ def decode_png(path):
     with open(path, "rb") as f:
         data = f.read()
     w, h = struct.unpack(">II", data[16:24])
-    bit_depth = data[24]
     color_type = data[25]
     bpp = 4 if color_type == 6 else 3
 

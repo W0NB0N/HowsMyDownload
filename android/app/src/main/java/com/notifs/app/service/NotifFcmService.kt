@@ -14,6 +14,11 @@ class NotifFcmService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "NotifFcmService"
+        @Volatile
+        private var lastSeq: Int = 0
+        @Volatile
+        private var lastMessageTime: Long = 0L
+        private val finishedDownloadIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO)
@@ -51,16 +56,25 @@ class NotifFcmService : FirebaseMessagingService() {
         val pcName = data["pc_name"] ?: "Desktop-PC"
         val downloadsJsonStr = data["downloads"] ?: "[]"
 
+        val now = System.currentTimeMillis()
+        // Reset sequence tracker if a new download/test begins (seq <= 1) or after 30s inactivity
+        if (seq <= 1 || (now - lastMessageTime) > 30_000L) {
+            lastSeq = 0
+            finishedDownloadIds.clear()
+        }
+
+        // Drop out-of-order messages in the same stream
+        if (seq > 0 && lastSeq > 0 && seq < lastSeq) {
+            Log.w(TAG, "Dropping out-of-order message: seq=$seq < lastSeq=$lastSeq")
+            return
+        }
+
+        if (seq > 0) {
+            lastSeq = seq
+            lastMessageTime = now
+        }
+
         serviceScope.launch {
-            // Check sequence ordering
-            val lastSeq = dataStore.getLastSeq()
-            if (seq > 0 && seq < lastSeq) {
-                Log.w(TAG, "Dropping out-of-order message: seq=$seq < lastSeq=$lastSeq")
-                return@launch
-            }
-            if (seq > 0) {
-                dataStore.saveLastSeq(seq)
-            }
 
             try {
                 val jsonArray = JSONArray(downloadsJsonStr)
@@ -87,29 +101,35 @@ class NotifFcmService : FirebaseMessagingService() {
                     when (state) {
                         "completed" -> {
                             dataStore.clearDismissedDownload(id)
-                            notificationHelper.showCompletionNotification(
-                                downloadId = id,
-                                filename = filename,
-                                success = true,
-                                source = source,
-                                pcName = pcName
-                            )
+                            if (finishedDownloadIds.add(id)) {
+                                notificationHelper.showCompletionNotification(
+                                    downloadId = id,
+                                    filename = filename,
+                                    success = true,
+                                    source = source,
+                                    pcName = pcName
+                                )
+                            }
                         }
                         "failed" -> {
                             dataStore.clearDismissedDownload(id)
-                            notificationHelper.showCompletionNotification(
-                                downloadId = id,
-                                filename = filename,
-                                success = false,
-                                source = source,
-                                pcName = pcName
-                            )
+                            if (finishedDownloadIds.add(id)) {
+                                notificationHelper.showCompletionNotification(
+                                    downloadId = id,
+                                    filename = filename,
+                                    success = false,
+                                    source = source,
+                                    pcName = pcName
+                                )
+                            }
                         }
                         "erased" -> {
+                            finishedDownloadIds.remove(id)
                             dataStore.clearDismissedDownload(id)
                             notificationHelper.cancelNotification(id)
                         }
                         "paused", "starting", "downloading" -> {
+                            finishedDownloadIds.remove(id)
                             // Check if user swiped away this download
                             if (!dataStore.isDownloadDismissed(id)) {
                                 activeCount++
