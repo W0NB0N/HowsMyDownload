@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.notifs.app.data.PairingDataStore
 import com.notifs.app.data.PairingInfo
+import com.notifs.app.service.NotifFcmService
 import com.notifs.app.service.NotificationHelper
 import com.notifs.app.ui.QrScannerScreen
 import com.notifs.app.ui.theme.*
@@ -305,6 +306,8 @@ fun HomeScreen(
                                     }
                                 }
                                 dataStore.clearPairing()
+                                NotifFcmService.resetState()
+                                notificationHelper.cancelAll()
                                 Toast.makeText(context, "Unpaired", Toast.LENGTH_SHORT).show()
                             }
                         },

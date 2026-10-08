@@ -99,15 +99,18 @@ async def get_pairing_status(
 @router.delete("/{pairing_id}")
 async def delete_pairing(
     pairing_id: str,
-    auth_record: Annotated[PairingRecord, Depends(get_authenticated_pairing)],
     store: StoreDep,
+    credentials: AuthDep = None,
 ) -> dict:
-    """Unpairs/deletes the pairing session (requires Bearer token)."""
-    if auth_record.pairing_id != pairing_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Unauthorized for this pairing ID",
-        )
+    """Unpairs/deletes the pairing session (supports Bearer token or direct unpair)."""
+    if credentials is not None:
+        secret_hash = hash_secret(credentials.credentials)
+        record = await store.get_pairing_by_secret_hash(secret_hash)
+        if record and record.pairing_id != pairing_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized for this pairing ID",
+            )
 
     await store.delete_pairing(pairing_id)
     return {"status": "ok", "message": "Pairing deleted successfully"}
