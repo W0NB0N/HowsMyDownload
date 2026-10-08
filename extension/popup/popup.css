@@ -580,15 +580,77 @@ input:checked + .slider:before {
   font-weight: 600;
 }
 
+/* Button Component System */
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  outline: none;
+  transition: all 0.15s ease;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-white);
+  box-sizing: border-box;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--purple-brand);
+  border-color: var(--purple-light);
+  color: var(--text-white);
+  box-shadow: 0 0 10px var(--purple-glow);
+  width: 100%;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #7900e6;
+  border-color: #d8b4fe;
+  box-shadow: 0 0 14px rgba(138, 5, 255, 0.45);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-active);
+  color: var(--text-white);
+}
+
 .btn-danger {
   background: #201111;
   border: 1px solid #7f1d1d;
   color: #f87171;
+  width: 100%;
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   background: #7f1d1d;
   color: #ffffff;
+}
+
+.btn-pixel-icon {
+  width: 11px;
+  height: 11px;
+  display: inline-block;
+  vertical-align: middle;
+  image-rendering: pixelated;
 }
 
 .hidden {

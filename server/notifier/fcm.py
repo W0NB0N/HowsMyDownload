@@ -106,3 +106,29 @@ class FCMNotifier(BaseNotifier):
             logger.error("[FCM] Firebase delivery error: %s", fe)
         except Exception as e:
             logger.error("[FCM] Unexpected error sending FCM message: %s", e)
+
+    async def send_unpair_event(self, token: str, pairing_id: str) -> None:
+        """Sends a high-priority unpair signal message to the paired Android device."""
+        if not token or not firebase_admin._apps:
+            return
+
+        message = messaging.Message(
+            data={
+                "event": "unpaired",
+                "pairing_id": pairing_id,
+            },
+            token=token,
+            android=messaging.AndroidConfig(
+                priority="high",
+                ttl=timedelta(seconds=10),
+            ),
+        )
+        try:
+            msg_id = await asyncio.to_thread(messaging.send, message)
+            logger.info(
+                "[FCM] Unpair signal dispatched to %s... -> MsgId: %s",
+                token[:12],
+                msg_id,
+            )
+        except Exception as e:
+            logger.warning("[FCM] Could not send unpair signal to %s: %s", token[:12], e)
