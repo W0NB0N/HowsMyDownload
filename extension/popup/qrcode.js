@@ -7,7 +7,7 @@
 (function(global) {
   // Minimal QR Code Model 2 implementation
   function QRCode(typeNumber, errorCorrectionLevel) {
-    this.typeNumber = typeNumber || 4;
+    this.typeNumber = (typeNumber !== undefined && typeNumber !== null) ? typeNumber : 4;
     this.errorCorrectionLevel = errorCorrectionLevel || 1; // 1 = L (7%), 0 = M (15%)
     this.modules = null;
     this.moduleCount = 0;
