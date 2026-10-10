@@ -66,7 +66,7 @@ export async function sendSample(sample) {
       lastSampleTime: Date.now()
     });
   } catch (storageErr) {
-    console.warn("[Download Notifs] Error updating local sample history:", storageErr);
+    console.warn("[How's My Download] Error updating local sample history:", storageErr);
   }
 
   // If unpaired, don't dispatch to backend (no mobile recipient)
@@ -109,10 +109,10 @@ export async function sendSample(sample) {
       const resData = await res.json();
 
       const timestamp = new Date(sample.timestamp).toLocaleTimeString();
-      console.log(`[Download Notifs] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
+      console.log(`[How's My Download] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
     } else {
       if (res.status === 401) {
-        console.warn("[Download Notifs] Server returned 401 (Pairing revoked). Resetting pairing status.");
+        console.warn("[How's My Download] Server returned 401 (Pairing revoked). Resetting pairing status.");
         serverOnline = true;
         dispatchError = null;
         await chrome.storage.local.set({
@@ -125,13 +125,13 @@ export async function sendSample(sample) {
         });
       } else {
         dispatchError = `Server responded with HTTP ${res.status}`;
-        console.warn(`[Download Notifs] Server error: ${res.status} ${res.statusText}`);
+        console.warn(`[How's My Download] Server error: ${res.status} ${res.statusText}`);
       }
     }
   } catch (fetchErr) {
     dispatchError = fetchErr.message || "Failed to fetch";
     pendingRetrySample = sample;
-    console.warn(`[Download Notifs] Backend unreachable at ${targetEndpoint} (${dispatchError})`);
+    console.warn(`[How's My Download] Backend unreachable at ${targetEndpoint} (${dispatchError})`);
   }
 
   // Update server connection status in storage

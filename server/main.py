@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Creates and configures the FastAPI instance."""
     app = FastAPI(
-        title="Download Notifs Backend",
+        title="How's My Download Backend",
         version="0.1.0",
         description="FastAPI service mirroring PC download progress to mobile notifications.",
         lifespan=lifespan,
@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     async def root():
-        return {"service": "Download Notifs Backend", "status": "online"}
+        return {"service": "How's My Download Backend", "status": "online"}
 
     return app
 

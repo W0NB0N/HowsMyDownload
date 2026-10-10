@@ -13,11 +13,11 @@ import {
 } from "./poller.js";
 import { checkServerHealth } from "./api.js";
 
-console.log("[Download Notifs] Service worker starting up.");
+console.log("[How's My Download] Service worker starting up.");
 
 // Initialize default storage on first install
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log("[Download Notifs] Extension installed / updated:", details.reason);
+  console.log("[How's My Download] Extension installed / updated:", details.reason);
   const defaults = {
     serverUrl: "http://localhost:8000",
     pcName: "Desktop-PC",
@@ -44,7 +44,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 // Resume on browser startup
 chrome.runtime.onStartup.addListener(() => {
-  console.log("[Download Notifs] Browser startup detected.");
+  console.log("[How's My Download] Browser startup detected.");
   checkActiveDownloads();
 });
 
