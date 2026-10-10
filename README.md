@@ -1,4 +1,4 @@
-# 📲 Download Notifs
+# 📲 How's My Download (HMD)
 
 Real-time Chrome download progress mirrored to your Android phone via lock-screen notifications and Firebase Cloud Messaging (FCM).
 
