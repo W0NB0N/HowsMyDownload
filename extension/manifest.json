@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Download Notifs",
+  "name": "How's My Download",
   "version": "0.1.0",
   "description": "Mirrors Chrome download progress to your phone in real time.",
   "permissions": [
@@ -19,7 +19,7 @@
   },
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Download Notifs",
+    "default_title": "How's My Download",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

@@ -36,9 +36,9 @@ import com.notifs.app.data.PairingInfo
 import com.notifs.app.service.NotifFcmService
 import com.notifs.app.service.NotificationHelper
 import com.notifs.app.ui.QrScannerScreen
-import com.notifs.app.ui.theme.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -159,34 +159,39 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
                         text = "$ ",
                         color = PurpleLight,
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
-                        text = "notifs",
+                        text = "how's my download",
                         color = TextWhite,
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = " // android",
-                        color = TextMuted,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Text(
-                    text = "v0.1.0 · phase 6 pairing active",
+                    text = "hmd // android v0.1.0",
                     color = TextMuted,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -368,26 +373,9 @@ fun HomeScreen(
                         fontFamily = FontFamily.Monospace
                     )
 
-                    var manualServerUrl by remember { mutableStateOf("http://192.168.1.5:8000") }
                     var manualCode by remember { mutableStateOf("") }
                     var isClaimingManual by remember { mutableStateOf(false) }
                     var manualError by remember { mutableStateOf<String?>(null) }
-
-                    OutlinedTextField(
-                        value = manualServerUrl,
-                        onValueChange = { manualServerUrl = it },
-                        label = { Text("Server URL", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PurpleBrand,
-                            unfocusedBorderColor = BorderSubtle,
-                            focusedTextColor = TextWhite,
-                            unfocusedTextColor = TextDim,
-                            cursorColor = PurpleLight
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                    )
 
                     OutlinedTextField(
                         value = manualCode,
@@ -441,7 +429,8 @@ fun HomeScreen(
                                             return@withContext
                                         }
 
-                                        val cleanUrl = manualServerUrl.trim().trimEnd('/')
+                                        val serverTarget = pairingInfo.serverUrl?.takeIf { it.isNotBlank() } ?: "https://hmd-api.duckdns.org"
+                                        val cleanUrl = serverTarget.trim().trimEnd('/')
                                         val cleanCode = manualCode.trim().uppercase()
                                         val endpoint = "$cleanUrl/v1/pairings/$cleanCode/claim"
 
@@ -681,86 +670,9 @@ fun HomeScreen(
             }
         }
 
-        // Test Notification Diagnostics Card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = BgCard),
-            border = BorderStroke(1.dp, BorderSubtle),
-            shape = RoundedCornerShape(6.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "--diagnostics [ local_test ]",
-                    color = PurpleLight,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "Trigger local notifications directly on this device to verify system channels and lock-screen visibility.",
-                    color = TextDim,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            notificationHelper.showProgressNotification(
-                                downloadId = "test-demo-1",
-                                filename = "ubuntu-24.04-desktop.iso",
-                                percentage = 42.5f,
-                                speedBytesSec = 15_500_000,
-                                etaSeconds = 180,
-                                source = "Chrome",
-                                pcName = "Desktop-PC"
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BgElevated),
-                        border = BorderStroke(1.dp, BorderSubtle),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Test 42%",
-                            color = GreenNeon,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            notificationHelper.showCompletionNotification(
-                                downloadId = "test-demo-1",
-                                filename = "ubuntu-24.04-desktop.iso",
-                                success = true,
-                                source = "Chrome",
-                                pcName = "Desktop-PC"
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BgElevated),
-                        border = BorderStroke(1.dp, BorderSubtle),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "Test Done",
-                            color = PurpleLight,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-        }
-
         // Footer info
         Text(
-            text = "// scan extension qr to pair or use tools/fcm_test_sender.py",
+            text = "// how's my download · scan extension qr to pair or enter 6-char code",
             color = TextMuted,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,

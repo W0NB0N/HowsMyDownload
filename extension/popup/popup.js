@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (res.status === 401 || res.status === 403 || res.status === 404) {
         // Pairing was deleted on server (e.g. by phone)
-        console.warn("[Download Notifs] Server confirmed pairing was revoked. Resetting UI.");
+        console.warn("[How's My Download] Server confirmed pairing was revoked. Resetting UI.");
         await chrome.storage.local.set({
           isPaired: false,
           pairingId: null,

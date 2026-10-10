@@ -135,7 +135,7 @@ export function startPolling() {
   lastActiveTimestamp = Date.now();
 
   if (!pollIntervalId) {
-    console.log("[Download Notifs] Starting download poller (every 2s).");
+    console.log("[How's My Download] Starting download poller (every 2s).");
     pollAndSample(); // immediate sample
     pollIntervalId = setInterval(pollAndSample, POLL_INTERVAL_MS);
   }
@@ -151,7 +151,7 @@ export function startPolling() {
  */
 export function stopPolling() {
   if (pollIntervalId) {
-    console.log("[Download Notifs] Poller entering idle state (no active downloads).");
+    console.log("[How's My Download] Poller entering idle state (no active downloads).");
     clearInterval(pollIntervalId);
     pollIntervalId = null;
   }
@@ -172,7 +172,7 @@ export async function checkActiveDownloads() {
  * Event handler for chrome.downloads.onCreated
  */
 export function handleDownloadCreated(downloadItem) {
-  console.log(`[Download Notifs] Download created: ${downloadItem.id} (${downloadItem.filename || downloadItem.url})`);
+  console.log(`[How's My Download] Download created: ${downloadItem.id} (${downloadItem.filename || downloadItem.url})`);
   startPolling();
 }
 
@@ -180,7 +180,7 @@ export function handleDownloadCreated(downloadItem) {
  * Event handler for chrome.downloads.onChanged
  */
 export async function handleDownloadChanged(delta) {
-  console.log(`[Download Notifs] Download changed: ${delta.id}`, delta);
+  console.log(`[How's My Download] Download changed: ${delta.id}`, delta);
 
   if (delta.state && (delta.state.current === "complete" || delta.state.current === "interrupted")) {
     const items = await chrome.downloads.search({ id: delta.id });
@@ -201,7 +201,7 @@ export async function handleDownloadChanged(delta) {
  * Event handler for chrome.downloads.onErased
  */
 export function handleDownloadErased(downloadId) {
-  console.log(`[Download Notifs] Download erased: ${downloadId}`);
+  console.log(`[How's My Download] Download erased: ${downloadId}`);
   recentlyFinishedDownloads.delete(downloadId);
   pollAndSample();
 }
