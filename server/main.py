@@ -79,6 +79,10 @@ def create_app() -> FastAPI:
     app.include_router(samples_router)
     app.include_router(pairings_router)
 
+    @app.get("/")
+    async def root():
+        return {"service": "Download Notifs Backend", "status": "online"}
+
     return app
 
 

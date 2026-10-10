@@ -205,6 +205,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       pairingBadge.textContent = "UNPAIRED";
       pairingBadge.className = "pairing-status-badge status-unpaired";
       pairedView.classList.add("hidden");
+      // If currently displaying QR code modal waiting for phone to claim, keep QR visible
+      if (qrContainer && !qrContainer.classList.contains("hidden")) {
+        return;
+      }
       unpairedView.classList.remove("hidden");
       qrContainer.classList.add("hidden");
     }
