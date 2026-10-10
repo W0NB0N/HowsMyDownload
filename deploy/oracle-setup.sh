@@ -38,7 +38,6 @@ apt-get install -y \
     gnupg \
     lsb-release \
     git \
-    ufw \
     iptables-persistent \
     netfilter-persistent \
     nginx \
@@ -51,12 +50,6 @@ echo -e "${CYAN}[2/7] Configuring Oracle Cloud firewall & iptables rules...${NC}
 iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT || iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT || iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 netfilter-persistent save
-
-# Configure UFW
-ufw allow 22/tcp comment 'SSH'
-ufw allow 80/tcp comment 'HTTP'
-ufw allow 443/tcp comment 'HTTPS'
-ufw --force enable
 
 echo -e "${CYAN}[3/7] Installing Docker CE and Docker Compose plugin...${NC}"
 if ! command -v docker &> /dev/null; then
