@@ -36,6 +36,7 @@ import com.notifs.app.data.PairingInfo
 import com.notifs.app.service.NotifFcmService
 import com.notifs.app.service.NotificationHelper
 import com.notifs.app.ui.QrScannerScreen
+import com.notifs.app.ui.theme.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow

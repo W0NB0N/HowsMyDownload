@@ -1,6 +1,6 @@
-# Oracle Cloud VM Production Deployment Guide
+# How's My Download — Oracle Cloud VM Production Deployment Guide
 
-This guide provides an end-to-end walkthrough for deploying the **Download Notifs** FastAPI backend to an **Oracle Cloud Infrastructure (OCI) Always-Free VM** running Ubuntu with Docker, Nginx reverse proxy, SSL termination via Let's Encrypt, and systemd process orchestration.
+This guide provides an end-to-end walkthrough for deploying the **How's My Download** FastAPI backend to an **Oracle Cloud Infrastructure (OCI) Always-Free VM** running Ubuntu with Docker, Nginx reverse proxy, SSL termination via Let's Encrypt, and systemd process orchestration.
 
 ---
 
