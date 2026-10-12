@@ -15,10 +15,10 @@ import java.util.Locale
 class NotificationHelper(private val context: Context) {
 
     companion object {
-        const val CHANNEL_DOWNLOADS = "downloads_v2"
+        const val CHANNEL_DOWNLOADS = "downloads_v3"
         const val CHANNEL_COMPLETIONS = "completions_v2"
         const val GROUP_DOWNLOADS = "com.notifs.app.DOWNLOADS_GROUP"
-        const val SUMMARY_ID = 0
+        const val SUMMARY_ID = 990
         const val ACTION_DISMISSED = "com.notifs.app.ACTION_DISMISSED"
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
 
@@ -40,14 +40,15 @@ class NotificationHelper(private val context: Context) {
             // Delete legacy channels if they exist
             try {
                 notificationManager.deleteNotificationChannel("downloads")
+                notificationManager.deleteNotificationChannel("downloads_v2")
                 notificationManager.deleteNotificationChannel("completions")
             } catch (_: Exception) {}
 
-            // 1. Silent Active Progress Channel (Default importance for lockscreen & status bar visibility, but no sound/vibration)
+            // 1. Silent Active Progress Channel (Low importance for clean grouped progress bars without sound/vibration)
             val downloadsChannel = NotificationChannel(
                 CHANNEL_DOWNLOADS,
                 "Active Downloads",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Live progress bar for in-progress transfers"
                 setShowBadge(false)
@@ -86,7 +87,7 @@ class NotificationHelper(private val context: Context) {
         etaSeconds: Long?,
         source: String = "Chrome",
         pcName: String = "Desktop-PC",
-        hideFilenamesOnLockScreen: Boolean = false,
+        hideFilenames: Boolean = false,
         state: String = "downloading"
     ) {
         val notifId = getNotificationId(downloadId)
@@ -100,6 +101,12 @@ class NotificationHelper(private val context: Context) {
         val pctStr = if (percentage != null) "${String.format(Locale.US, "%.1f", percentage)}%" else "LIVE"
 
         val isPaused = (state == "paused")
+        val displayTitle = if (hideFilenames) {
+            if (isPaused) "Download Paused" else "Downloading…"
+        } else {
+            filename
+        }
+
         val contentText = when {
             isPaused -> "$pctStr · PAUSED"
             etaStr.isNotBlank() -> "$pctStr · $speedStr · $etaStr"
@@ -132,38 +139,19 @@ class NotificationHelper(private val context: Context) {
         val builder = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setColor(BRAND_COLOR)
-            .setContentTitle(filename)
+            .setContentTitle(displayTitle)
             .setContentText(contentText)
             .setSubText(subText)
             .setContentIntent(pendingOpenIntent)
             .setDeleteIntent(pendingDeleteIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setGroup(GROUP_DOWNLOADS)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             .setProgress(100, pctInt, isIndeterminate)
-
-        // Lock Screen Privacy Guard
-        if (hideFilenamesOnLockScreen) {
-            builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            val publicTitle = if (isPaused) "Download Paused" else "Downloading…"
-            val publicText = if (isPaused) "$pctStr · PAUSED" else "$pctStr · $speedStr"
-            val publicNotification = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setColor(BRAND_COLOR)
-                .setContentTitle(publicTitle)
-                .setContentText(publicText)
-                .setSubText(subText)
-                .setOngoing(true)
-                .setProgress(100, pctInt, isIndeterminate)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
-            builder.setPublicVersion(publicNotification)
-        } else {
-            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            builder.setPublicVersion(null)
-        }
+            .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
 
         notificationManager.notify(notifId, builder.build())
     }
@@ -174,7 +162,7 @@ class NotificationHelper(private val context: Context) {
         success: Boolean,
         source: String = "Chrome",
         pcName: String = "Desktop-PC",
-        hideFilenamesOnLockScreen: Boolean = false
+        hideFilenames: Boolean = false
     ) {
         val notifId = getNotificationId(downloadId)
         activeProgressNotifIds.remove(notifId)
@@ -183,6 +171,7 @@ class NotificationHelper(private val context: Context) {
         notificationManager.cancel(notifId)
 
         val title = if (success) "Download Complete" else "Download Failed"
+        val contentText = if (hideFilenames) "Transfer finished" else filename
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -199,30 +188,14 @@ class NotificationHelper(private val context: Context) {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setColor(BRAND_COLOR)
             .setContentTitle(title)
-            .setContentText(filename)
+            .setContentText(contentText)
             .setSubText(subText)
             .setContentIntent(pendingOpenIntent)
             .setAutoCancel(true)
             .setOngoing(false)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(if (success) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_ERROR)
-
-        // Privacy Guard on lock screen for completions
-        if (hideFilenamesOnLockScreen) {
-            builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            val publicNotification = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setColor(BRAND_COLOR)
-                .setContentTitle(title)
-                .setContentText("Transfer finished")
-                .setSubText(subText)
-                .setAutoCancel(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
-            builder.setPublicVersion(publicNotification)
-        } else {
-            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            builder.setPublicVersion(null)
-        }
+            .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
 
         notificationManager.notify(notifId, builder.build())
     }
@@ -277,6 +250,10 @@ class NotificationHelper(private val context: Context) {
         activeProgressNotifIds.clear()
     }
 
+    fun cancelGroupSummary() {
+        notificationManager.cancel(SUMMARY_ID)
+    }
+
     fun showGroupSummary(
         activeCount: Int,
         totalSpeedBytes: Long,
@@ -284,10 +261,10 @@ class NotificationHelper(private val context: Context) {
         activeItems: List<Pair<String, Float?>> = emptyList(),
         source: String = "Chrome",
         pcName: String = "Desktop-PC",
-        hideFilenamesOnLockScreen: Boolean = false
+        hideFilenames: Boolean = false
     ) {
         if (activeCount < 3) {
-            notificationManager.cancel(SUMMARY_ID)
+            cancelGroupSummary()
             return
         }
 
@@ -314,8 +291,9 @@ class NotificationHelper(private val context: Context) {
             .setBigContentTitle(summaryTitle)
             .setSummaryText(subText)
 
-        for ((name, pct) in activeItems) {
-            val displayName = if (hideFilenamesOnLockScreen) "Download" else name
+        for ((index, item) in activeItems.withIndex()) {
+            val (name, pct) = item
+            val displayName = if (hideFilenames) "Download #${index + 1}" else name
             val pctText = if (pct != null) "${String.format(Locale.US, "%.0f", pct)}%" else "LIVE"
             inboxStyle.addLine("$displayName - $pctText")
         }
@@ -330,28 +308,12 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(pendingOpenIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setGroup(GROUP_DOWNLOADS)
             .setGroupSummary(true)
-
-        if (hideFilenamesOnLockScreen) {
-            summaryBuilder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            val publicSummary = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setColor(BRAND_COLOR)
-                .setContentTitle("$activeCount Downloads Active")
-                .setContentText(subText)
-                .setSubText(subText)
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .setGroup(GROUP_DOWNLOADS)
-                .setGroupSummary(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
-            summaryBuilder.setPublicVersion(publicSummary)
-        } else {
-            summaryBuilder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            summaryBuilder.setPublicVersion(null)
-        }
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
+            .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
 
         notificationManager.notify(SUMMARY_ID, summaryBuilder.build())
     }

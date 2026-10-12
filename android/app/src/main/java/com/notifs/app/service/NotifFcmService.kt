@@ -128,7 +128,7 @@ class NotifFcmService : FirebaseMessagingService() {
 
         serviceScope.launch {
             val lastStoredSeq = dataStore.getLastSeq()
-            val hideFilenames = dataStore.getHideFilenamesLockScreen()
+            val hideFilenames = dataStore.getHideFilenames()
 
             // 1. If pairing_id changed, reset sequence and finished download cache immediately
             if (pairingId.isNotBlank() && pairingId != lastPairingId) {
@@ -212,7 +212,7 @@ class NotifFcmService : FirebaseMessagingService() {
                                     success = true,
                                     source = source,
                                     pcName = pcName,
-                                    hideFilenamesOnLockScreen = hideFilenames
+                                    hideFilenames = hideFilenames
                                 )
                             }
                         }
@@ -225,7 +225,7 @@ class NotifFcmService : FirebaseMessagingService() {
                                     success = false,
                                     source = source,
                                     pcName = pcName,
-                                    hideFilenamesOnLockScreen = hideFilenames
+                                    hideFilenames = hideFilenames
                                 )
                             }
                         }
@@ -258,23 +258,8 @@ class NotifFcmService : FirebaseMessagingService() {
                     }
                 }
 
-                // Show individual progress notifications for ALL active downloads (no hard cap!)
-                val currentActiveIds = activeCandidates.map { it.id }.toSet()
-                for (active in activeCandidates) {
-                    notificationHelper.showProgressNotification(
-                        downloadId = active.id,
-                        filename = active.filename,
-                        percentage = active.pct,
-                        speedBytesSec = active.speed,
-                        etaSeconds = active.eta,
-                        source = source,
-                        pcName = pcName,
-                        hideFilenamesOnLockScreen = hideFilenames,
-                        state = active.state
-                    )
-                }
-
                 // Clean up any progress notifications that are no longer active
+                val currentActiveIds = activeCandidates.map { it.id }.toSet()
                 notificationHelper.cleanRemovedProgressNotifications(currentActiveIds)
 
                 // Calculate total remaining bytes across active downloads
@@ -288,17 +273,36 @@ class NotifFcmService : FirebaseMessagingService() {
                 }
                 val remainingBytesParam = if (hasKnownRemaining) totalRemainingBytes else null
 
-                // Group summary if multiple active downloads exist (3+ downloads)
-                val summaryItems = activeCandidates.map { Pair(it.filename, it.pct) }
-                notificationHelper.showGroupSummary(
-                    activeCount = activeCandidates.size,
-                    totalSpeedBytes = totalSpeedBytes,
-                    totalRemainingBytes = remainingBytesParam,
-                    activeItems = summaryItems,
-                    source = source,
-                    pcName = pcName,
-                    hideFilenamesOnLockScreen = hideFilenames
-                )
+                // Group summary if multiple active downloads exist (3+ downloads): Post BEFORE child items
+                if (activeCandidates.size >= 3) {
+                    val summaryItems = activeCandidates.map { Pair(it.filename, it.pct) }
+                    notificationHelper.showGroupSummary(
+                        activeCount = activeCandidates.size,
+                        totalSpeedBytes = totalSpeedBytes,
+                        totalRemainingBytes = remainingBytesParam,
+                        activeItems = summaryItems,
+                        source = source,
+                        pcName = pcName,
+                        hideFilenames = hideFilenames
+                    )
+                } else {
+                    notificationHelper.cancelGroupSummary()
+                }
+
+                // Show individual progress notifications for ALL active downloads
+                for (active in activeCandidates) {
+                    notificationHelper.showProgressNotification(
+                        downloadId = active.id,
+                        filename = active.filename,
+                        percentage = active.pct,
+                        speedBytesSec = active.speed,
+                        etaSeconds = active.eta,
+                        source = source,
+                        pcName = pcName,
+                        hideFilenames = hideFilenames,
+                        state = active.state
+                    )
+                }
 
                 // 90-second local safety net watchdog: only arm if transfers are ACTIVELY downloading (not paused)
                 val hasActivelyTransferring = activeCandidates.any { it.state == "downloading" || it.state == "starting" }
