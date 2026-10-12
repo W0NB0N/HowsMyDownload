@@ -23,13 +23,13 @@ graph TD
     end
 
     subgraph AndroidClient["Android Client (Kotlin / Compose) — 'How's My Download'"]
-        ACT_MAIN["MainActivity.kt & HomeScreen.kt\n(Dark Terminal UI, Privacy Toggle, Active Pairing Card, Token Display)"]
+        ACT_MAIN["MainActivity.kt & HomeScreen.kt\n(Dark Terminal UI, Content-Level Privacy Toggle, Active Pairing Card, Token Display)"]
         QR_SCAN["ui/QrScannerScreen.kt\n(CameraX Preview + ML Kit Barcode Analyzer HUD)"]
         THEME["ui/theme/ (Color.kt, Theme.kt)\n(Render-inspired Dark Palette)"]
         FCM_SVC["service/NotifFcmService.kt\n(FCM Ingress, Sequence Drop, Token Rotation Call, 90s Local Safety Net)"]
-        NOTIF_HLP["service/NotificationHelper.kt\n(Progress/Completion Channels, InboxStyle 3+ Group Summary, Public/Private Lockscreen Redaction)"]
+        NOTIF_HLP["service/NotificationHelper.kt\n(downloads_v3 IMPORTANCE_LOW, Summary ID 990, InboxStyle 3+ Group Summary, Content-Level Filename Redaction)"]
         DISMISS_RCV["service/NotificationDismissReceiver.kt\n(Swipe-away Dismissal Tracking)"]
-        DATA_STORE["data/PairingDataStore.kt\n(DataStore: lastSeq, hideFilenamesLockScreen, Pairing State)"]
+        DATA_STORE["data/PairingDataStore.kt\n(DataStore: lastSeq, hideFilenames, Pairing State)"]
 
         ACT_MAIN --> THEME
         ACT_MAIN --> NOTIF_HLP
@@ -133,8 +133,8 @@ graph TD
 | **Single-Report Pause Poller** | `extension/background/poller.js` | Detects paused downloads and dispatches a sample once on entering paused state. Halts polling and notification spam for paused items until status changes (resumed to downloading, completed, failed). | Feeds into `api.js` and Chrome downloads API. |
 | **Extension Popup Status UI** | `extension/popup/` | Renders connection state pills (green CONNECTED, amber RECONNECTING, red UNREACHABLE, gray CHECKING). Widened to 340px with ellipsis protection. | Receives runtime messages and storage events from `api.js`. |
 | **Android Sequence Dropper & Token Refresh** | `android/.../service/NotifFcmService.kt` | Compares incoming `seq` against DataStore `lastSeq`, dropping duplicates and out-of-order pushes (`seq <= lastSeq`). On `onNewToken`, automatically queries pairing info and dispatches `POST /v1/pairings/{id}/token` via OkHttp. Maintains 90s local safety net (`safetyNetJob`) alerting "PC Offline" if FCM stops during active transfers. | Updates `PairingDataStore` and interacts with `NotificationHelper`. |
-| **Android Unlimited Grouping & Summary Header** | `android/.../service/NotificationHelper.kt` | Unlimited active download progress notifications. For 3+ active downloads, displays a collapsed summary header formatted as `"$activeCount Downloads Active • $remaining left • $totalSpeed total"` with `NotificationCompat.InboxStyle` and native child grouping. | Triggered by `NotifFcmService.kt`. |
-| **Lock Screen Privacy Guard** | `MainActivity.kt` & `NotificationHelper.kt` | Added `--privacy [ lock_screen ]` terminal card with Render dark switch. Immediately re-renders existing on-screen notifications without waiting for ticks. When ON: sets `VISIBILITY_PRIVATE` and attaches `setPublicVersion()` showing redacted titles ("Downloading…", "Download Paused", "Transfer finished"). When OFF: sets `VISIBILITY_PUBLIC`. | Controlled by Compose UI, persisted in DataStore, rendered by NotificationHelper. |
+| **Android Unlimited Grouping & Summary Header** | `android/.../service/NotificationHelper.kt` | Uncapped active download progress notifications. Fixes missing summary header by assigning positive `SUMMARY_ID = 990`, creating `downloads_v3` channel with `IMPORTANCE_LOW` & `GROUP_ALERT_SUMMARY`. For 3+ active downloads, posts collapsed summary header formatted as `"$activeCount Downloads Active • $remaining left • $totalSpeed total"` with `NotificationCompat.InboxStyle` before children; automatically cancels summary header when active downloads drop below 3. | Triggered by `NotifFcmService.kt`. |
+| **Hide Filenames in Notifications (Content-Level Privacy Guard)** | `MainActivity.kt` & `NotificationHelper.kt` | Added `--privacy [ hide_filenames ]` terminal card with Render dark switch. Immediately re-renders existing on-screen notifications without waiting for ticks. Always hides filenames at the content level in all notifications (titles show "Downloading…" / "Download Paused", body shows stats / "Transfer finished", summary shows "Download #1 - 64%"). Filenames appear strictly inside the app UI (`DownloadItemCard`) and never in notifications. | Controlled by Compose UI, persisted in DataStore (`hide_filenames_in_notifs`), rendered by NotificationHelper. |
 | **Pairing Storage Backends** | `server/store/` | `InMemoryPairingStore` and `FirestorePairingStore` supporting CRUD plus `update_fcm_token`. | Consumed by `pairings.py`, `auth.py`, and `fcm.py`. |
 | **Server Tests** | `server/tests/` | 29 Pytest suites covering throttler, queue coalescing, strict sequencing, state-change bypass, token cleanup, token refresh, and tracker state machine (100% pass). | Automated CI/test runner. |
 
@@ -155,8 +155,8 @@ graph TD
 | **8.9 Single-Report Pause Status** | `extension/background/poller.js` | Reports paused download status once upon transition, then halts polling/dispatching for that download until status changes. | **COMPLETE** |
 | **8.10 FCM Ingress & Sequence Drop** | `android/.../NotifFcmService.kt` | Drops pushes with `seq <= lastSeq`. Automatically pushes refreshed token to server on `onNewToken` via OkHttp. | **COMPLETE** |
 | **8.11 90s Local Safety Net** | `android/.../NotifFcmService.kt` | Local coroutine safety net cancelling active progress notifications and alerting "PC Offline" if FCM messages cease for 90s during active downloads. | **COMPLETE** |
-| **8.12 Unlimited Grouping & Summary** | `android/.../NotificationHelper.kt` | Uncapped download notifications; for 3+ downloads displays collapsed summary header (`$activeCount Downloads Active • $remaining left • $totalSpeed total`) with `InboxStyle`. | **COMPLETE** |
-| **8.13 Lock Screen Privacy Guard** | `MainActivity.kt` & `NotificationHelper.kt` | `--privacy [ lock_screen ]` toggle card with instant re-render. Configures `setPublicVersion()` with redacted titles on lock screen. | **COMPLETE** |
+| **8.12 Unlimited Grouping & Summary Header** | `android/.../NotificationHelper.kt` | Uncapped download notifications; `SUMMARY_ID = 990` and `downloads_v3` channel (`IMPORTANCE_LOW`); for 3+ downloads displays collapsed summary header (`$activeCount Downloads Active • $remaining left • $totalSpeed total`) with `InboxStyle`, auto-cancelling when active count < 3. | **COMPLETE** |
+| **8.13 Content-Level Privacy Guard** | `MainActivity.kt` & `NotificationHelper.kt` | `--privacy [ hide_filenames ]` toggle card with instant re-render. Redacts filenames at content level so filenames appear only in app, and notifications show sanitized status text. | **COMPLETE** |
 
 ---
 

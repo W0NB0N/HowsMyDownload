@@ -110,7 +110,7 @@ fun HomeScreen(
     var fcmToken by remember { mutableStateOf<String?>("Fetching token...") }
     val pairingInfo by dataStore.pairingInfoFlow.collectAsState(initial = PairingInfo(null, null, null, false))
     val activeDownloads by DownloadRepository.downloadsFlow.collectAsState()
-    val isPrivacyOn by dataStore.hideFilenamesLockScreenFlow.collectAsState(initial = false)
+    val isPrivacyOn by dataStore.hideFilenamesFlow.collectAsState(initial = false)
 
     var hasNotifPermission by remember {
         mutableStateOf(
@@ -607,7 +607,7 @@ fun HomeScreen(
             }
         }
 
-        // Lock Screen Privacy Guard Card
+        // Privacy Guard Card: Content-level filename hiding (shown only in app)
         Card(
             colors = CardDefaults.cardColors(containerColor = BgCard),
             border = BorderStroke(1.dp, BorderSubtle),
@@ -633,14 +633,14 @@ fun HomeScreen(
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = "[ lock_screen ]",
+                                text = "[ hide_filenames ]",
                                 color = TextMuted,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
                         Text(
-                            text = "// redact filenames on secure lock screen",
+                            text = "// hide filenames in notifications · shown only in app",
                             color = TextDim,
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
@@ -651,25 +651,14 @@ fun HomeScreen(
                         checked = isPrivacyOn,
                         onCheckedChange = { checked ->
                             coroutineScope.launch {
-                                dataStore.setHideFilenamesLockScreen(checked)
+                                dataStore.setHideFilenames(checked)
 
                                 // Immediately re-render all existing on-screen notifications
                                 val currentDownloads = DownloadRepository.downloadsFlow.value
                                 val activeOnly = currentDownloads.filter {
                                     it.state.lowercase() in listOf("downloading", "starting", "paused")
                                 }
-                                for (dl in activeOnly) {
-                                    notificationHelper.showProgressNotification(
-                                        downloadId = dl.id,
-                                        filename = dl.filename,
-                                        percentage = dl.percentage,
-                                        speedBytesSec = dl.speedBytesSec,
-                                        etaSeconds = dl.etaSeconds,
-                                        pcName = pairingInfo.pcName ?: "Desktop-PC",
-                                        hideFilenamesOnLockScreen = checked,
-                                        state = dl.state
-                                    )
-                                }
+
                                 if (activeOnly.size >= 3) {
                                     val totalSpeed = activeOnly.filter { it.state != "paused" }.sumOf { it.speedBytesSec }
                                     var remaining = 0L
@@ -686,7 +675,22 @@ fun HomeScreen(
                                         totalRemainingBytes = if (hasRem) remaining else null,
                                         activeItems = activeOnly.map { Pair(it.filename, it.percentage) },
                                         pcName = pairingInfo.pcName ?: "Desktop-PC",
-                                        hideFilenamesOnLockScreen = checked
+                                        hideFilenames = checked
+                                    )
+                                } else {
+                                    notificationHelper.cancelGroupSummary()
+                                }
+
+                                for (dl in activeOnly) {
+                                    notificationHelper.showProgressNotification(
+                                        downloadId = dl.id,
+                                        filename = dl.filename,
+                                        percentage = dl.percentage,
+                                        speedBytesSec = dl.speedBytesSec,
+                                        etaSeconds = dl.etaSeconds,
+                                        pcName = pairingInfo.pcName ?: "Desktop-PC",
+                                        hideFilenames = checked,
+                                        state = dl.state
                                     )
                                 }
                             }

@@ -29,7 +29,8 @@ class PairingDataStore(private val context: Context) {
         private val KEY_IS_PAIRED = booleanPreferencesKey("is_paired")
         private val KEY_LAST_SEQ = intPreferencesKey("last_seq")
         private val KEY_DISMISSED_IDS = stringPreferencesKey("dismissed_download_ids")
-        private val KEY_HIDE_FILENAMES_LOCK_SCREEN = booleanPreferencesKey("hide_filenames_lock_screen")
+        private val KEY_HIDE_FILENAMES = booleanPreferencesKey("hide_filenames_in_notifs")
+        private val KEY_LEGACY_HIDE_LOCK = booleanPreferencesKey("hide_filenames_lock_screen")
     }
 
     val fcmTokenFlow: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -45,19 +46,26 @@ class PairingDataStore(private val context: Context) {
         )
     }
 
-    val hideFilenamesLockScreenFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[KEY_HIDE_FILENAMES_LOCK_SCREEN] ?: false
+    val hideFilenamesFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_HIDE_FILENAMES] ?: prefs[KEY_LEGACY_HIDE_LOCK] ?: false
     }
 
-    suspend fun setHideFilenamesLockScreen(hide: Boolean) {
+    val hideFilenamesLockScreenFlow: Flow<Boolean> = hideFilenamesFlow
+
+    suspend fun setHideFilenames(hide: Boolean) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_HIDE_FILENAMES_LOCK_SCREEN] = hide
+            prefs[KEY_HIDE_FILENAMES] = hide
+            prefs[KEY_LEGACY_HIDE_LOCK] = hide
         }
     }
 
-    suspend fun getHideFilenamesLockScreen(): Boolean {
-        return context.dataStore.data.map { it[KEY_HIDE_FILENAMES_LOCK_SCREEN] ?: false }.first()
+    suspend fun setHideFilenamesLockScreen(hide: Boolean) = setHideFilenames(hide)
+
+    suspend fun getHideFilenames(): Boolean {
+        return hideFilenamesFlow.first()
     }
+
+    suspend fun getHideFilenamesLockScreen(): Boolean = getHideFilenames()
 
     suspend fun saveFcmToken(token: String) {
         context.dataStore.edit { prefs ->
