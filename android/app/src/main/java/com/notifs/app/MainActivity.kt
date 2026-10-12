@@ -110,6 +110,7 @@ fun HomeScreen(
     var fcmToken by remember { mutableStateOf<String?>("Fetching token...") }
     val pairingInfo by dataStore.pairingInfoFlow.collectAsState(initial = PairingInfo(null, null, null, false))
     val activeDownloads by DownloadRepository.downloadsFlow.collectAsState()
+    val isPrivacyOn by dataStore.hideFilenamesLockScreenFlow.collectAsState(initial = false)
 
     var hasNotifPermission by remember {
         mutableStateOf(
@@ -602,6 +603,103 @@ fun HomeScreen(
                             fontSize = 11.sp
                         )
                     }
+                }
+            }
+        }
+
+        // Lock Screen Privacy Guard Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BgCard),
+            border = BorderStroke(1.dp, BorderSubtle),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "--privacy",
+                                color = PurpleLight,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "[ lock_screen ]",
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Text(
+                            text = "// redact filenames on secure lock screen",
+                            color = TextDim,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    Switch(
+                        checked = isPrivacyOn,
+                        onCheckedChange = { checked ->
+                            coroutineScope.launch {
+                                dataStore.setHideFilenamesLockScreen(checked)
+
+                                // Immediately re-render all existing on-screen notifications
+                                val currentDownloads = DownloadRepository.downloadsFlow.value
+                                val activeOnly = currentDownloads.filter {
+                                    it.state.lowercase() in listOf("downloading", "starting", "paused")
+                                }
+                                for (dl in activeOnly) {
+                                    notificationHelper.showProgressNotification(
+                                        downloadId = dl.id,
+                                        filename = dl.filename,
+                                        percentage = dl.percentage,
+                                        speedBytesSec = dl.speedBytesSec,
+                                        etaSeconds = dl.etaSeconds,
+                                        pcName = pairingInfo.pcName ?: "Desktop-PC",
+                                        hideFilenamesOnLockScreen = checked,
+                                        state = dl.state
+                                    )
+                                }
+                                if (activeOnly.size >= 3) {
+                                    val totalSpeed = activeOnly.filter { it.state != "paused" }.sumOf { it.speedBytesSec }
+                                    var remaining = 0L
+                                    var hasRem = false
+                                    for (dl in activeOnly) {
+                                        if (dl.totalBytes != null && dl.totalBytes > dl.bytesDownloaded) {
+                                            remaining += (dl.totalBytes - dl.bytesDownloaded)
+                                            hasRem = true
+                                        }
+                                    }
+                                    notificationHelper.showGroupSummary(
+                                        activeCount = activeOnly.size,
+                                        totalSpeedBytes = totalSpeed,
+                                        totalRemainingBytes = if (hasRem) remaining else null,
+                                        activeItems = activeOnly.map { Pair(it.filename, it.percentage) },
+                                        pcName = pairingInfo.pcName ?: "Desktop-PC",
+                                        hideFilenamesOnLockScreen = checked
+                                    )
+                                }
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = TextWhite,
+                            checkedTrackColor = PurpleBrand,
+                            uncheckedThumbColor = TextMuted,
+                            uncheckedTrackColor = BgElevated,
+                            uncheckedBorderColor = BorderSubtle,
+                            checkedBorderColor = PurpleBrand
+                        )
+                    )
                 }
             }
         }

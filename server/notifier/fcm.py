@@ -10,6 +10,7 @@ import firebase_admin
 from firebase_admin import credentials, exceptions, messaging
 from server.notifier.base import BaseNotifier
 from server.schemas import PushPayload
+from server.store.base import BasePairingStore
 
 logger = logging.getLogger("notifs.notifier.fcm")
 
@@ -21,9 +22,11 @@ class FCMNotifier(BaseNotifier):
         self,
         cred_path: str | None = None,
         default_token: str | None = None,
+        store: BasePairingStore | None = None,
     ) -> None:
         self.default_token = default_token
         self.cred_path = cred_path
+        self.store = store
 
         self._init_firebase(cred_path)
 
@@ -97,11 +100,22 @@ class FCMNotifier(BaseNotifier):
                 msg_id,
                 len(payload.downloads),
             )
-        except messaging.UnregisteredError:
+        except (messaging.UnregisteredError, exceptions.InvalidArgumentError) as token_err:
             logger.warning(
-                "[FCM] Device token is no longer registered or has been uninstalled: %s...",
+                "[FCM] Device token is no longer registered or is invalid (%s): %s...",
+                token_err,
                 token[:12],
             )
+            if self.store and payload.pairing_id:
+                try:
+                    logger.info("[FCM] Cleaning up revoked pairing: %s", payload.pairing_id)
+                    await self.store.delete_pairing(payload.pairing_id)
+                except Exception as cleanup_err:
+                    logger.error(
+                        "[FCM] Failed to cleanup revoked pairing %s: %s",
+                        payload.pairing_id,
+                        cleanup_err,
+                    )
         except exceptions.FirebaseError as fe:
             logger.error("[FCM] Firebase delivery error: %s", fe)
         except Exception as e:

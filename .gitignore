@@ -65,3 +65,6 @@ yarn-error.log*
 *~
 .DS_Store
 Thumbs.db
+
+commands.txt
+phase-8-prompt.txt

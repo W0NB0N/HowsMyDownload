@@ -29,6 +29,7 @@ class PairingDataStore(private val context: Context) {
         private val KEY_IS_PAIRED = booleanPreferencesKey("is_paired")
         private val KEY_LAST_SEQ = intPreferencesKey("last_seq")
         private val KEY_DISMISSED_IDS = stringPreferencesKey("dismissed_download_ids")
+        private val KEY_HIDE_FILENAMES_LOCK_SCREEN = booleanPreferencesKey("hide_filenames_lock_screen")
     }
 
     val fcmTokenFlow: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -42,6 +43,20 @@ class PairingDataStore(private val context: Context) {
             pcName = prefs[KEY_PAIRED_PC_NAME],
             isPaired = prefs[KEY_IS_PAIRED] ?: false
         )
+    }
+
+    val hideFilenamesLockScreenFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_HIDE_FILENAMES_LOCK_SCREEN] ?: false
+    }
+
+    suspend fun setHideFilenamesLockScreen(hide: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_HIDE_FILENAMES_LOCK_SCREEN] = hide
+        }
+    }
+
+    suspend fun getHideFilenamesLockScreen(): Boolean {
+        return context.dataStore.data.map { it[KEY_HIDE_FILENAMES_LOCK_SCREEN] ?: false }.first()
     }
 
     suspend fun saveFcmToken(token: String) {
@@ -60,6 +75,7 @@ class PairingDataStore(private val context: Context) {
             prefs[KEY_SERVER_URL] = serverUrl
             prefs[KEY_PAIRED_PC_NAME] = pcName
             prefs[KEY_IS_PAIRED] = true
+            prefs[KEY_LAST_SEQ] = 0
         }
     }
 
@@ -69,6 +85,7 @@ class PairingDataStore(private val context: Context) {
             prefs.remove(KEY_SERVER_URL)
             prefs.remove(KEY_PAIRED_PC_NAME)
             prefs[KEY_IS_PAIRED] = false
+            prefs[KEY_LAST_SEQ] = 0
         }
     }
 

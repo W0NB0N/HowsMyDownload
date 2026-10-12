@@ -13,12 +13,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install project dependencies
-COPY pyproject.toml .
+# Install project dependencies (cached unless dependencies in server/pyproject.toml change)
+COPY server/pyproject.toml ./server/
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir \
+      "fastapi>=0.115.0" \
+      "uvicorn[standard]>=0.32.0" \
+      "pydantic>=2.9.0" \
+      "pydantic-settings>=2.5.0" \
+      "firebase-admin>=6.5.0" \
+      "google-cloud-firestore>=2.19.0" \
+      "websockets>=13.1" \
+      "cryptography>=43.0.0" \
+      "httpx>=0.27.0"
 
-# Copy application source code
+# Copy application source code (changes to source code will NOT re-download dependencies)
 COPY server/ ./server/
 
 # Create non-root unprivileged service user

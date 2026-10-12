@@ -39,21 +39,32 @@ async def lifespan(app: FastAPI):
         fcm_notifier = FCMNotifier(
             cred_path=settings.GOOGLE_APPLICATION_CREDENTIALS,
             default_token=settings.target_fcm_token,
+            store=pairing_store,
         )
         notifier = CompositeNotifier([console_notifier, fcm_notifier])
     else:
         # Default: Console output only
         notifier = ConsoleNotifier()
 
-    tracker_manager = TrackerManager(notifier=notifier)
+    # 3. Rate limiting Throttler & Tracker Manager
+    from server.throttler.push_throttler import PushThrottler
+
+    throttler = PushThrottler(notifier=notifier, min_interval_sec=2.0)
+    tracker_manager = TrackerManager(
+        notifier=notifier,
+        cleanup_ttl_sec=30.0,
+        throttler=throttler,
+    )
 
     app.state.pairing_store = pairing_store
     app.state.notifier = notifier
+    app.state.throttler = throttler
     app.state.tracker_manager = tracker_manager
 
     yield
 
-    # Cleanup on shutdown if needed
+    # Cleanup on shutdown
+    await tracker_manager.close()
 
 
 def create_app() -> FastAPI:

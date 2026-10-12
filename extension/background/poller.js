@@ -1,6 +1,8 @@
 /**
  * Poller module for the Chrome Extension.
  * Watches chrome.downloads API, computes state snapshots, and sends periodic samples.
+ * Supports single-report pause status: when a download enters paused state, it is reported once,
+ * and no further samples are sent for that download until its state changes.
  */
 
 import { sendSample } from "./api.js";
@@ -12,11 +14,12 @@ const IDLE_TIMEOUT_MS = 6000;
 let pollIntervalId = null;
 let lastActiveTimestamp = 0;
 let recentlyFinishedDownloads = new Map(); // downloadId -> { item, timestamp, reported }
+let reportedDownloads = new Map(); // downloadId -> { state, bytesReceived }
 
 /**
  * Extracts a clean basename from a file path or URL.
  */
-function extractFilename(item) {
+export function extractFilename(item) {
   if (item.filename) {
     const normalized = item.filename.replace(/\\/g, "/");
     const parts = normalized.split("/");
@@ -40,7 +43,7 @@ function extractFilename(item) {
 /**
  * Maps a Chrome DownloadItem to our protocol state.
  */
-function mapDownloadState(item) {
+export function mapDownloadState(item) {
   if (item.state === "complete") {
     return "completed";
   }
@@ -59,7 +62,7 @@ function mapDownloadState(item) {
 /**
  * Converts a Chrome DownloadItem to our protocol Schema v1 DownloadItem.
  */
-function toProtocolDownload(item) {
+export function toProtocolDownload(item) {
   const state = mapDownloadState(item);
   return {
     id: String(item.id),
@@ -90,26 +93,74 @@ export async function pollAndSample() {
   const inProgressItems = await chrome.downloads.search({ state: "in_progress" });
   const now = Date.now();
 
-  // 2. Filter active or recently completed/interrupted downloads
+  // 2. Track downloads and state transitions
   const downloadItems = [];
+  let hasActiveTransfer = false;
+  let hasStateOrProgressChange = false;
+  const currentIds = new Set();
 
-  // Add all in-progress items
   for (const item of inProgressItems) {
-    downloadItems.push(toProtocolDownload(item));
+    const strId = String(item.id);
+    currentIds.add(strId);
+    const protoItem = toProtocolDownload(item);
+    const last = reportedDownloads.get(strId);
+
+    if (protoItem.state === "downloading" || protoItem.state === "starting") {
+      hasActiveTransfer = true;
+      if (!last || last.state !== protoItem.state || last.bytesReceived !== protoItem.bytes_downloaded) {
+        hasStateOrProgressChange = true;
+      }
+    } else if (protoItem.state === "paused") {
+      // Send paused state once when transitioning into paused
+      if (!last || last.state !== "paused") {
+        hasStateOrProgressChange = true;
+      }
+    } else {
+      if (!last || last.state !== protoItem.state) {
+        hasStateOrProgressChange = true;
+      }
+    }
+
+    downloadItems.push(protoItem);
   }
 
-  // Include recently finished items that need at least one report
-  for (const [id, record] of recentlyFinishedDownloads.entries()) {
-    if (!record.reported || (now - record.timestamp < 4000)) {
-      downloadItems.push(toProtocolDownload(record.item));
-      record.reported = true;
-    } else if (now - record.timestamp >= 10000) {
-      recentlyFinishedDownloads.delete(id);
+  // Clean up reportedDownloads for items no longer in progress
+  for (const id of reportedDownloads.keys()) {
+    if (!currentIds.has(id) && !recentlyFinishedDownloads.has(id)) {
+      reportedDownloads.delete(id);
     }
   }
 
-  if (downloadItems.length > 0) {
+  // Include recently finished items that need reporting
+  let hasUnsentFinished = false;
+  for (const [id, record] of recentlyFinishedDownloads.entries()) {
+    if (!record.reported || (now - record.timestamp < 4000)) {
+      downloadItems.push(toProtocolDownload(record.item));
+      if (!record.reported) {
+        hasUnsentFinished = true;
+        record.reported = true;
+      }
+    } else if (now - record.timestamp >= 10000) {
+      recentlyFinishedDownloads.delete(id);
+      reportedDownloads.delete(id);
+    }
+  }
+
+  // Determine whether to dispatch sample:
+  // Dispatch if there is active transferring, an unsent state transition (like newly paused),
+  // or an unsent terminal item.
+  const shouldSend = hasActiveTransfer || hasStateOrProgressChange || hasUnsentFinished;
+
+  if (downloadItems.length > 0 && shouldSend) {
     lastActiveTimestamp = now;
+
+    // Record reported states
+    for (const item of downloadItems) {
+      reportedDownloads.set(item.id, {
+        state: item.state,
+        bytesReceived: item.bytes_downloaded
+      });
+    }
 
     const samplePayload = {
       pairing_id: pairingId,
@@ -120,11 +171,12 @@ export async function pollAndSample() {
     };
 
     await sendSample(samplePayload);
-  } else {
-    // Check if we should go idle
-    if (now - lastActiveTimestamp > IDLE_TIMEOUT_MS) {
-      stopPolling();
-    }
+  }
+
+  // If no downloads are actively transferring and no unsent items remain (e.g. all paused or finished),
+  // stop the polling interval immediately to prevent continuous network ticks.
+  if (!hasActiveTransfer && !hasUnsentFinished) {
+    stopPolling();
   }
 }
 
@@ -203,6 +255,7 @@ export async function handleDownloadChanged(delta) {
 export function handleDownloadErased(downloadId) {
   console.log(`[How's My Download] Download erased: ${downloadId}`);
   recentlyFinishedDownloads.delete(downloadId);
+  reportedDownloads.delete(String(downloadId));
   pollAndSample();
 }
 

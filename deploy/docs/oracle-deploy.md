@@ -276,6 +276,7 @@ sudo ./deploy/oracle-setup.sh
 cd /opt/notifs
 git pull origin master
 sudo docker compose -f deploy/docker-compose.yml build
+sudo docker image prune -f
 sudo systemctl restart notifs-api.service
 ```
 

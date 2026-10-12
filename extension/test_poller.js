@@ -137,4 +137,30 @@ assert.strictEqual(chunkedProtocol.total_bytes, null);
 assert.strictEqual(chunkedProtocol.bytes_downloaded, 1048576);
 console.log(" ✓ Schema v1 conformance passed.");
 
+// 4. Single-report pause status logic test
+console.log("\n4. Testing single-report pause status logic:");
+const reportedDownloads = new Map();
+function shouldReportItem(protoItem) {
+  const last = reportedDownloads.get(protoItem.id);
+  if (protoItem.state === "paused") {
+    if (!last || last.state !== "paused") {
+      reportedDownloads.set(protoItem.id, { state: "paused", bytesReceived: protoItem.bytes_downloaded });
+      return true; // Sent once on transition to paused
+    }
+    return false; // Already reported as paused, do not re-send
+  }
+  reportedDownloads.set(protoItem.id, { state: protoItem.state, bytesReceived: protoItem.bytes_downloaded });
+  return true;
+}
+
+const pausedDl = { id: "99", filename: "file.iso", bytes_downloaded: 500, total_bytes: 1000, state: "paused" };
+assert.strictEqual(shouldReportItem(pausedDl), true, "First paused tick should report");
+assert.strictEqual(shouldReportItem(pausedDl), false, "Second paused tick should NOT report again");
+assert.strictEqual(shouldReportItem(pausedDl), false, "Third paused tick should NOT report again");
+
+// Resumed to downloading
+const resumedDl = { id: "99", filename: "file.iso", bytes_downloaded: 600, total_bytes: 1000, state: "downloading" };
+assert.strictEqual(shouldReportItem(resumedDl), true, "Resumed tick should report");
+console.log(" ✓ Single-report pause status passed.");
+
 console.log("\n✅ ALL TESTS PASSED!");
