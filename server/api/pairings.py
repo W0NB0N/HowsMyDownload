@@ -13,6 +13,8 @@ from server.schemas import (
     CreatePairingRequest,
     CreatePairingResponse,
     PairingStatusResponse,
+    UpdateTokenRequest,
+    UpdateTokenResponse,
 )
 from server.store.base import PairingRecord
 
@@ -127,3 +129,33 @@ async def delete_pairing(
 
     await store.delete_pairing(pairing_id)
     return {"status": "ok", "message": "Pairing deleted successfully"}
+
+
+@router.post("/{pairing_id}/token", response_model=UpdateTokenResponse)
+async def update_pairing_token(
+    pairing_id: str,
+    payload: UpdateTokenRequest,
+    store: StoreDep,
+) -> UpdateTokenResponse:
+    """Updates the FCM device registration token for a claimed pairing."""
+    record = await store.get_pairing(pairing_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pairing not found",
+        )
+
+    if not record.is_claimed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pairing is not claimed yet",
+        )
+
+    success = await store.update_fcm_token(pairing_id, payload.fcm_token)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update device token",
+        )
+
+    return UpdateTokenResponse(status="ok", pairing_id=pairing_id)

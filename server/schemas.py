@@ -119,3 +119,13 @@ class PairingStatusResponse(BaseModel):
     pc_name: str
     created_at: datetime
     claimed_at: datetime | None = None
+
+
+class UpdateTokenRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    fcm_token: str = Field(..., min_length=1, description="New FCM device registration token")
+
+
+class UpdateTokenResponse(BaseModel):
+    status: str = "ok"
+    pairing_id: str

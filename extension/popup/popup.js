@@ -263,8 +263,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (message.payload) {
         updateUI(message.payload, enabledToggle.checked, Date.now());
       }
-      if (typeof message.serverOnline === "boolean") {
-        updateServerStatus(message.serverOnline, message.error);
+      if (typeof message.serverOnline === "boolean" || message.connectionState) {
+        updateServerStatus(message.serverOnline, message.error, message.connectionState);
       }
       if (typeof message.isPaired === "boolean") {
         updatePairingUI(message.isPaired);
@@ -278,9 +278,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (changes.isPaired !== undefined) {
         updatePairingUI(changes.isPaired.newValue === true);
       }
-      if (changes.serverOnline !== undefined || changes.lastServerError !== undefined) {
-        chrome.storage.local.get(["serverOnline", "lastServerError"]).then(({ serverOnline, lastServerError }) => {
-          updateServerStatus(serverOnline, lastServerError);
+      if (changes.serverOnline !== undefined || changes.lastServerError !== undefined || changes.connectionState !== undefined) {
+        chrome.storage.local.get(["serverOnline", "lastServerError", "connectionState"]).then(({ serverOnline, lastServerError, connectionState }) => {
+          updateServerStatus(serverOnline, lastServerError, connectionState);
         });
       }
       if (changes.lastSample !== undefined && changes.lastSample.newValue) {
@@ -310,9 +310,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       });
 
-      updateServerStatus(response.online, response.error);
+      updateServerStatus(response.online, response.error, response.connectionState);
     } catch (err) {
-      updateServerStatus(false, err.message);
+      updateServerStatus(false, err.message, "unreachable");
     }
   }
 
@@ -322,20 +322,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     serverErrorText.classList.add("hidden");
   }
 
-  function updateServerStatus(isOnline, errorMsg) {
-    if (isOnline) {
-      serverStatusPill.className = "server-pill pill-online";
-      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">ONLINE</span>';
-      serverErrorText.classList.add("hidden");
-    } else {
-      serverStatusPill.className = "server-pill pill-offline";
-      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">OFFLINE</span>';
+  function updateServerStatus(isOnline, errorMsg, connectionState) {
+    if (connectionState === "reconnecting" || (!isOnline && errorMsg && errorMsg.toLowerCase().includes("reconnecting"))) {
+      serverStatusPill.className = "server-pill pill-reconnecting";
+      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">RECONNECTING</span>';
       if (errorMsg) {
         serverErrorText.textContent = `// ${errorMsg}`;
         serverErrorText.classList.remove("hidden");
       } else {
-        serverErrorText.classList.add("hidden");
+        serverErrorText.textContent = "// in backoff retry loop";
+        serverErrorText.classList.remove("hidden");
       }
+    } else if (connectionState === "unreachable" || (!isOnline && connectionState !== "connected")) {
+      serverStatusPill.className = "server-pill pill-offline";
+      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">UNREACHABLE</span>';
+      if (errorMsg) {
+        serverErrorText.textContent = `// ${errorMsg}`;
+      } else {
+        serverErrorText.textContent = "// server unreachable";
+      }
+      serverErrorText.classList.remove("hidden");
+    } else if (isOnline || connectionState === "connected") {
+      serverStatusPill.className = "server-pill pill-online";
+      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">CONNECTED</span>';
+      serverErrorText.classList.add("hidden");
+    } else {
+      serverStatusPill.className = "server-pill pill-checking";
+      serverStatusPill.innerHTML = '<span class="pill-dot"></span><span class="pill-text">CHECKING</span>';
+      serverErrorText.classList.add("hidden");
     }
   }
 

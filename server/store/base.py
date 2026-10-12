@@ -69,3 +69,8 @@ class BasePairingStore(ABC):
     async def delete_pairing(self, pairing_id: str) -> bool:
         """Deletes/unpairs an active pairing."""
         pass
+
+    @abstractmethod
+    async def update_fcm_token(self, pairing_id: str, fcm_token: str) -> bool:
+        """Updates the registered FCM token for an existing pairing."""
+        pass

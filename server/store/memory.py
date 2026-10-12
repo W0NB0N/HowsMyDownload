@@ -94,3 +94,11 @@ class InMemoryPairingStore(BasePairingStore):
             self._by_code.pop(record.code.upper(), None)
             self._by_secret_hash.pop(record.secret_hash, None)
             return True
+
+    async def update_fcm_token(self, pairing_id: str, fcm_token: str) -> bool:
+        async with self._lock:
+            record = self._by_id.get(pairing_id)
+            if not record:
+                return False
+            record.fcm_token = fcm_token
+            return True

@@ -130,3 +130,15 @@ class FirestorePairingStore(BasePairingStore):
             return False
 
         return await asyncio.to_thread(_sync_delete)
+
+    async def update_fcm_token(self, pairing_id: str, fcm_token: str) -> bool:
+        def _sync_update():
+            db = self._get_db()
+            doc_ref = db.collection(self.collection_name).document(pairing_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                doc_ref.update({"fcm_token": fcm_token})
+                return True
+            return False
+
+        return await asyncio.to_thread(_sync_update)

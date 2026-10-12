@@ -10,27 +10,42 @@ from server.schemas import (
     PushPayload,
     SamplePayload,
 )
+from server.throttler.push_throttler import PushThrottler
 from server.tracker.download import TrackedDownload
 
 
 class TrackerManager:
     """Manages all active download states and dispatches evaluated push payloads."""
 
-    def __init__(self, notifier: BaseNotifier, cleanup_ttl_sec: float = 30.0) -> None:
+    def __init__(
+        self,
+        notifier: BaseNotifier,
+        cleanup_ttl_sec: float = 30.0,
+        throttler: PushThrottler | None = None,
+    ) -> None:
         self.notifier = notifier
         self.cleanup_ttl_sec = cleanup_ttl_sec
+        self.throttler = throttler
         # Map: (pairing_id, download_id) -> TrackedDownload
         self._downloads: dict[tuple[str, str], TrackedDownload] = {}
-        # Map: pairing_id -> current seq number
+        # Map: pairing_id -> current seq number (used when no throttler configured)
         self._seq_map: dict[str, int] = {}
         # Lock for thread/async safety
         self._lock = asyncio.Lock()
 
     def _next_seq(self, pairing_id: str) -> int:
         """Returns the next incrementing sequence number for the pairing."""
+        if self.throttler:
+            return self.throttler._next_seq(pairing_id)
         seq = self._seq_map.get(pairing_id, 0) + 1
         self._seq_map[pairing_id] = seq
         return seq
+
+    def get_seq(self, pairing_id: str) -> int:
+        """Returns the current sequence counter for a pairing."""
+        if self.throttler:
+            return self.throttler.get_seq(pairing_id)
+        return self._seq_map.get(pairing_id, 0)
 
     async def process_sample(
         self,
@@ -61,18 +76,20 @@ class TrackerManager:
                 if tracked.state == DownloadState.ERASED:
                     self._downloads.pop(key, None)
 
-            seq = self._next_seq(sample.pairing_id)
-
             push_payload = PushPayload(
-                seq=seq,
+                seq=self.get_seq(sample.pairing_id) or 1,
                 source=sample.source,
                 pc_name=sample.pc_name,
                 pairing_id=sample.pairing_id,
                 downloads=evaluated_list,
             )
 
-            # Dispatch to notifier backend
-            await self.notifier.notify(push_payload, target_token=target_token)
+            # Dispatch to notifier backend (throttled or direct)
+            if self.throttler:
+                await self.throttler.submit(push_payload, target_token=target_token)
+            else:
+                push_payload.seq = self._next_seq(sample.pairing_id)
+                await self.notifier.notify(push_payload, target_token=target_token)
 
             # Run periodic cleanup
             self._cleanup_stale(now)
@@ -97,3 +114,9 @@ class TrackerManager:
         if pairing_id is None:
             return len(self._downloads)
         return sum(1 for (p_id, _) in self._downloads if p_id == pairing_id)
+
+    async def close(self) -> None:
+        """Closes throttler resources."""
+        async with self._lock:
+            if self.throttler:
+                await self.throttler.close()

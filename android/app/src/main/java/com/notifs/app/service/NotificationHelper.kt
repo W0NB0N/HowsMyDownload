@@ -9,6 +9,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.notifs.app.MainActivity
 import com.notifs.app.R
+import java.util.Collections
+import java.util.Locale
 
 class NotificationHelper(private val context: Context) {
 
@@ -25,6 +27,9 @@ class NotificationHelper(private val context: Context) {
 
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    // Thread-safe set of currently displayed progress notification IDs
+    private val activeProgressNotifIds = Collections.synchronizedSet(mutableSetOf<Int>())
 
     init {
         createChannels()
@@ -80,21 +85,25 @@ class NotificationHelper(private val context: Context) {
         speedBytesSec: Long,
         etaSeconds: Long?,
         source: String = "Chrome",
-        pcName: String = "Desktop-PC"
+        pcName: String = "Desktop-PC",
+        hideFilenamesOnLockScreen: Boolean = false,
+        state: String = "downloading"
     ) {
         val notifId = getNotificationId(downloadId)
+        activeProgressNotifIds.add(notifId)
+
         val isIndeterminate = (percentage == null)
         val pctInt = percentage?.toInt() ?: 0
 
         val speedStr = formatSpeed(speedBytesSec)
         val etaStr = formatEta(etaSeconds)
-        val pctStr = if (percentage != null) "${String.format("%.1f", percentage)}%" else "LIVE"
+        val pctStr = if (percentage != null) "${String.format(Locale.US, "%.1f", percentage)}%" else "LIVE"
 
-        // Format: "42.0% · 5.2 MB/s · 3m left"
-        val contentText = if (etaStr.isNotBlank()) {
-            "$pctStr · $speedStr · $etaStr"
-        } else {
-            "$pctStr · $speedStr"
+        val isPaused = (state == "paused")
+        val contentText = when {
+            isPaused -> "$pctStr · PAUSED"
+            etaStr.isNotBlank() -> "$pctStr · $speedStr · $etaStr"
+            else -> "$pctStr · $speedStr"
         }
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
 
@@ -132,9 +141,29 @@ class NotificationHelper(private val context: Context) {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setGroup(GROUP_DOWNLOADS)
             .setProgress(100, pctInt, isIndeterminate)
+
+        // Lock Screen Privacy Guard
+        if (hideFilenamesOnLockScreen) {
+            builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            val publicTitle = if (isPaused) "Download Paused" else "Downloading…"
+            val publicText = if (isPaused) "$pctStr · PAUSED" else "$pctStr · $speedStr"
+            val publicNotification = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(publicTitle)
+                .setContentText(publicText)
+                .setSubText(subText)
+                .setOngoing(true)
+                .setProgress(100, pctInt, isIndeterminate)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build()
+            builder.setPublicVersion(publicNotification)
+        } else {
+            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            builder.setPublicVersion(null)
+        }
 
         notificationManager.notify(notifId, builder.build())
     }
@@ -144,9 +173,11 @@ class NotificationHelper(private val context: Context) {
         filename: String,
         success: Boolean,
         source: String = "Chrome",
-        pcName: String = "Desktop-PC"
+        pcName: String = "Desktop-PC",
+        hideFilenamesOnLockScreen: Boolean = false
     ) {
         val notifId = getNotificationId(downloadId)
+        activeProgressNotifIds.remove(notifId)
 
         // Cancel the ongoing progress notification
         notificationManager.cancel(notifId)
@@ -154,7 +185,9 @@ class NotificationHelper(private val context: Context) {
         val title = if (success) "Download Complete" else "Download Failed"
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
 
-        val openIntent = Intent(context, MainActivity::class.java)
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingOpenIntent = PendingIntent.getActivity(
             context,
             notifId,
@@ -172,47 +205,176 @@ class NotificationHelper(private val context: Context) {
             .setAutoCancel(true)
             .setOngoing(false)
             .setCategory(if (success) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_ERROR)
+
+        // Privacy Guard on lock screen for completions
+        if (hideFilenamesOnLockScreen) {
+            builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            val publicNotification = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(title)
+                .setContentText("Transfer finished")
+                .setSubText(subText)
+                .setAutoCancel(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build()
+            builder.setPublicVersion(publicNotification)
+        } else {
+            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            builder.setPublicVersion(null)
+        }
+
+        notificationManager.notify(notifId, builder.build())
+    }
+
+    fun showStaleNotification(source: String = "Chrome", pcName: String = "Desktop-PC") {
+        cancelActiveProgressNotifications()
+        val notifId = 9999
+        val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
+        val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setColor(BRAND_COLOR)
+            .setContentTitle("PC Offline")
+            .setContentText("Transfer stalled — connection lost with $pcName")
+            .setSubText(subText)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
         notificationManager.notify(notifId, builder.build())
     }
 
+    fun cancelActiveProgressNotifications() {
+        synchronized(activeProgressNotifIds) {
+            for (id in activeProgressNotifIds) {
+                notificationManager.cancel(id)
+            }
+            activeProgressNotifIds.clear()
+        }
+        notificationManager.cancel(SUMMARY_ID)
+    }
+
     fun cancelNotification(downloadId: String) {
-        notificationManager.cancel(getNotificationId(downloadId))
+        val notifId = getNotificationId(downloadId)
+        activeProgressNotifIds.remove(notifId)
+        notificationManager.cancel(notifId)
+    }
+
+    fun cleanRemovedProgressNotifications(currentActiveIds: Set<String>) {
+        val currentNotifIds = currentActiveIds.map { getNotificationId(it) }.toSet()
+        val toRemove = synchronized(activeProgressNotifIds) {
+            activeProgressNotifIds.filter { it !in currentNotifIds && it != SUMMARY_ID }
+        }
+        for (id in toRemove) {
+            notificationManager.cancel(id)
+            activeProgressNotifIds.remove(id)
+        }
     }
 
     fun cancelAll() {
         notificationManager.cancelAll()
+        activeProgressNotifIds.clear()
     }
 
-    fun showGroupSummary(activeCount: Int, totalSpeedBytes: Long, pcName: String = "Desktop-PC") {
-        if (activeCount <= 1) {
+    fun showGroupSummary(
+        activeCount: Int,
+        totalSpeedBytes: Long,
+        totalRemainingBytes: Long? = null,
+        activeItems: List<Pair<String, Float?>> = emptyList(),
+        source: String = "Chrome",
+        pcName: String = "Desktop-PC",
+        hideFilenamesOnLockScreen: Boolean = false
+    ) {
+        if (activeCount < 3) {
             notificationManager.cancel(SUMMARY_ID)
             return
         }
 
-        val speedStr = formatSpeed(totalSpeedBytes)
-        val summaryText = "$activeCount downloads · $speedStr"
+        val parts = mutableListOf<String>()
+        parts.add("$activeCount Downloads Active")
+        if (totalRemainingBytes != null && totalRemainingBytes > 0) {
+            parts.add("${formatBytes(totalRemainingBytes)} left")
+        }
+        parts.add("${formatSpeed(totalSpeedBytes)} total")
+        val summaryTitle = parts.joinToString(" • ")
+        val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
+
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingOpenIntent = PendingIntent.getActivity(
+            context,
+            SUMMARY_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle(summaryTitle)
+            .setSummaryText(subText)
+
+        for ((name, pct) in activeItems) {
+            val displayName = if (hideFilenamesOnLockScreen) "Download" else name
+            val pctText = if (pct != null) "${String.format(Locale.US, "%.0f", pct)}%" else "LIVE"
+            inboxStyle.addLine("$displayName - $pctText")
+        }
 
         val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setColor(BRAND_COLOR)
-            .setContentTitle(summaryText)
-            .setSubText(pcName)
+            .setContentTitle(summaryTitle)
+            .setContentText(subText)
+            .setSubText(subText)
+            .setStyle(inboxStyle)
+            .setContentIntent(pendingOpenIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setGroup(GROUP_DOWNLOADS)
             .setGroupSummary(true)
 
+        if (hideFilenamesOnLockScreen) {
+            summaryBuilder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            val publicSummary = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setColor(BRAND_COLOR)
+                .setContentTitle("$activeCount Downloads Active")
+                .setContentText(subText)
+                .setSubText(subText)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setGroup(GROUP_DOWNLOADS)
+                .setGroupSummary(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build()
+            summaryBuilder.setPublicVersion(publicSummary)
+        } else {
+            summaryBuilder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            summaryBuilder.setPublicVersion(null)
+        }
+
         notificationManager.notify(SUMMARY_ID, summaryBuilder.build())
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes >= 1024L * 1024 * 1024) {
+            return String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        }
+        if (bytes >= 1024L * 1024) {
+            return String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+        }
+        if (bytes >= 1024L) {
+            return String.format(Locale.US, "%.0f KB", bytes / 1024.0)
+        }
+        return "$bytes B"
     }
 
     private fun formatSpeed(bytesPerSec: Long): String {
         if (bytesPerSec >= 1024 * 1024) {
-            return String.format("%.1f MB/s", bytesPerSec / (1024.0 * 1024.0))
+            return String.format(Locale.US, "%.1f MB/s", bytesPerSec / (1024.0 * 1024.0))
         }
         if (bytesPerSec >= 1024) {
-            return String.format("%.0f KB/s", bytesPerSec / 1024.0)
+            return String.format(Locale.US, "%.0f KB/s", bytesPerSec / 1024.0)
         }
         return "$bytesPerSec B/s"
     }
