@@ -1,6 +1,10 @@
-"""Unit tests for PushThrottler: State-Change Bypass, Queue Coalescing, and Strict Sequence Numbering."""
+"""Unit tests for PushThrottler.
+
+Covers State-Change Bypass, Queue Coalescing, and Strict Sequence Numbering.
+"""
 
 import asyncio
+
 import pytest
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
 from server.tests.conftest import MockNotifier
@@ -54,7 +58,10 @@ async def test_throttler_state_change_bypass(mock_notifier: MockNotifier):
     assert mock_notifier.dispatched[2].downloads[0].state == DownloadState.PAUSED
 
     # 4. New download added -> immediate bypass
-    p4 = make_payload("pair-1", [("d1", DownloadState.PAUSED, 100), ("d2", DownloadState.STARTING, 0)])
+    p4 = make_payload(
+        "pair-1",
+        [("d1", DownloadState.PAUSED, 100), ("d2", DownloadState.STARTING, 0)],
+    )
     await throttler.submit(p4)
     assert len(mock_notifier.dispatched) == 4
     assert mock_notifier.dispatched[3].seq == 4

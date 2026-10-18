@@ -148,6 +148,7 @@ class NotifFcmService : FirebaseMessagingService() {
             }
 
             try {
+                val encKey = dataStore.getEncryptionKey()
                 val jsonArray = JSONArray(downloadsJsonStr)
                 val uiDownloads = mutableListOf<com.notifs.app.data.AppDownloadItem>()
 
@@ -167,7 +168,8 @@ class NotifFcmService : FirebaseMessagingService() {
                 for (i in 0 until jsonArray.length()) {
                     val item: JSONObject = jsonArray.getJSONObject(i)
                     val id = item.getString("id")
-                    val filename = item.getString("filename")
+                    val rawFilename = item.getString("filename")
+                    val filename = com.notifs.app.util.CryptoUtils.decryptFilename(rawFilename, encKey)
                     val state = item.getString("state").lowercase()
                     val pct = if (item.has("percentage") && !item.isNull("percentage")) {
                         item.getDouble("percentage").toFloat()

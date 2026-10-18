@@ -53,7 +53,7 @@ class PushThrottler:
         return self._seq_map.get(pairing_id, 0)
 
     def _has_state_changed(self, pairing_id: str, payload: PushPayload) -> bool:
-        """Detects if any download state represents a state transition or download addition/removal."""
+        """Detects if any download state represents a transition or download add/remove."""
         prev_states = self._last_known_states.get(pairing_id)
         if prev_states is None:
             # First push for this pairing is considered a state transition
@@ -65,7 +65,7 @@ class PushThrottler:
         if set(current_states.keys()) != set(prev_states.keys()):
             return True
 
-        # Check if any individual download state changed (e.g. downloading -> paused/completed/failed)
+        # Check if any individual download state changed (e.g. downloading -> paused/completed)
         for dl_id, current_state in current_states.items():
             if prev_states.get(dl_id) != current_state:
                 return True
@@ -143,7 +143,8 @@ class PushThrottler:
                 await self._dispatch_now(payload, target_token)
                 return
 
-            # Within throttle window: queue coalescing (overwriting previous interim progress sample)
+            # Within throttle window: queue coalescing
+            # (overwriting previous interim progress sample)
             self._pending_payloads[pairing_id] = (payload, target_token)
 
             # Ensure a background task is scheduled to flush when the window expires

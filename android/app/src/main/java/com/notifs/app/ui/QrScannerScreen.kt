@@ -320,6 +320,7 @@ private suspend fun handleQrPayload(
         var serverUrl = ""
         var code = ""
         var pcName = "Desktop-PC"
+        var encryptionKey: String? = null
         try {
 
             if (rawText.trim().startsWith("{")) {
@@ -327,11 +328,15 @@ private suspend fun handleQrPayload(
                 serverUrl = json.optString("server_url", "http://localhost:8000")
                 code = json.optString("code", "")
                 pcName = json.optString("pc_name", "Desktop-PC")
+                if (json.has("enc_key") && !json.isNull("enc_key")) {
+                    encryptionKey = json.getString("enc_key").trim()
+                }
             } else if (rawText.contains("|")) {
                 val parts = rawText.split("|")
                 serverUrl = parts[0]
                 code = parts[1]
                 if (parts.size > 2) pcName = parts[2]
+                if (parts.size > 3) encryptionKey = parts[3].trim()
             } else {
                 code = rawText.trim()
                 serverUrl = "http://localhost:8000"
@@ -376,7 +381,8 @@ private suspend fun handleQrPayload(
                 dataStore.savePairing(
                     pairingId = pairingId,
                     serverUrl = cleanUrl,
-                    pcName = respPcName
+                    pcName = respPcName,
+                    encryptionKey = encryptionKey
                 )
 
                 withContext(Dispatchers.Main) {

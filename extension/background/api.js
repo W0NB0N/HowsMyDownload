@@ -4,6 +4,8 @@
  * and managing local sample history.
  */
 
+import { encryptFilename } from "./crypto.js";
+
 const MAX_HISTORY = 100;
 const BACKOFF_STEPS = [2000, 4000, 8000, 16000, 30000];
 const MAX_RETRIES_BEFORE_UNREACHABLE = 5;
@@ -86,12 +88,13 @@ async function executeRetryPendingSample() {
  * @param {Object} sample - The SamplePayload conforming to Schema v1
  */
 export async function sendSample(sample) {
-  const { enabled, serverUrl, pairingSecret, pairingId, isPaired } = await chrome.storage.local.get({
+  const { enabled, serverUrl, pairingSecret, pairingId, isPaired, encryptionKey } = await chrome.storage.local.get({
     enabled: true,
     serverUrl: "http://localhost:8000",
     pairingSecret: null,
     pairingId: null,
-    isPaired: false
+    isPaired: false,
+    encryptionKey: null
   });
 
   if (!enabled) {
@@ -157,6 +160,16 @@ export async function sendSample(sample) {
     return;
   }
 
+  // Prepare payload for server transmission (encrypt filenames with client-side key)
+  const payloadToSend = JSON.parse(JSON.stringify(sample));
+  if (encryptionKey && Array.isArray(payloadToSend.downloads)) {
+    for (const dl of payloadToSend.downloads) {
+      if (dl.filename) {
+        dl.filename = await encryptFilename(dl.filename, encryptionKey);
+      }
+    }
+  }
+
   // Build headers
   const headers = {
     "Content-Type": "application/json",
@@ -171,7 +184,7 @@ export async function sendSample(sample) {
     const res = await fetch(targetEndpoint, {
       method: "POST",
       headers: headers,
-      body: JSON.stringify(sample),
+      body: JSON.stringify(payloadToSend),
       signal: AbortSignal.timeout(4000)
     });
 

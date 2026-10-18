@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const qrCancelBtn = document.getElementById("qr-cancel-btn");
   const pairedView = document.getElementById("pairing-paired-view");
   const unpairBtn = document.getElementById("unpair-btn");
+  const rotateSecretBtn = document.getElementById("rotate-secret-btn");
 
   let pairingPollInterval = null;
 
@@ -43,7 +44,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     isPaired: false,
     pairingId: null,
     pairingSecret: null,
-    pairingCode: null
+    pairingCode: null,
+    encryptionKey: null
   });
 
   serverUrlInput.value = settings.serverUrl;
@@ -96,18 +98,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       const pairingData = await res.json();
+      
+      // Generate client-side AES-256 encryption key for field-level filename encryption
+      const encKeyBytes = new Uint8Array(32);
+      crypto.getRandomValues(encKeyBytes);
+      const encKeyHex = Array.from(encKeyBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+
       await chrome.storage.local.set({
         pairingId: pairingData.pairing_id,
         pairingSecret: pairingData.secret,
         pairingCode: pairingData.code,
+        encryptionKey: encKeyHex,
         isPaired: false
       });
 
-      // Render QR code
+      // Render QR code (encryption key is passed purely via optical scan to phone)
       const qrPayload = JSON.stringify({
         server_url: sUrl,
         code: pairingData.code,
-        pc_name: hostname
+        pc_name: hostname,
+        enc_key: encKeyHex
       });
 
       if (typeof window.renderQRCode === "function") {
@@ -159,11 +169,55 @@ document.addEventListener("DOMContentLoaded", async () => {
       pairingId: null,
       pairingSecret: null,
       pairingCode: null,
+      encryptionKey: null,
       isPaired: false
     });
 
     updatePairingUI(false);
   });
+
+  // Rotate secret handler
+  if (rotateSecretBtn) {
+    rotateSecretBtn.addEventListener("click", async () => {
+      const { serverUrl, pairingId, pairingSecret } = await chrome.storage.local.get({
+        serverUrl: "http://localhost:8000",
+        pairingId: null,
+        pairingSecret: null
+      });
+
+      if (!pairingId || !pairingSecret) return;
+
+      rotateSecretBtn.disabled = true;
+      rotateSecretBtn.innerHTML = "<span>rotating...</span>";
+
+      try {
+        const cleanUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+        const res = await fetch(`${cleanUrl}/v1/pairings/${pairingId}/rotate-secret`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${pairingSecret}`,
+            "Content-Type": "application/json"
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        await chrome.storage.local.set({ pairingSecret: data.new_secret });
+        rotateSecretBtn.innerHTML = "<span style='color: var(--green-neon);'>&gt; secret rotated!</span>";
+        setTimeout(() => {
+          rotateSecretBtn.innerHTML = "<span>&gt; rotate secret</span>";
+          rotateSecretBtn.disabled = false;
+        }, 2000);
+      } catch (err) {
+        rotateSecretBtn.innerHTML = "<span style='color: #f87171;'>&gt; rotation failed</span>";
+        setTimeout(() => {
+          rotateSecretBtn.innerHTML = "<span>&gt; rotate secret</span>";
+          rotateSecretBtn.disabled = false;
+        }, 2000);
+      }
+    });
+  }
 
   function startPairingPoll(serverUrl, pairingId, secret) {
     stopPairingPoll();

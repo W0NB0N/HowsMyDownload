@@ -1,11 +1,11 @@
-"""Unit tests for FCM Token Invalidation, session cleanup, and Token Refresh endpoint."""
+"""Unit tests for FCM Token Invalidation, session cleanup, and Token Refresh."""
 
 from unittest.mock import patch
+
 import pytest
 from firebase_admin import exceptions, messaging
 from server.notifier.fcm import FCMNotifier
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
-from server.store.base import PairingRecord, utc_now
 from server.store.memory import InMemoryPairingStore
 
 
@@ -39,7 +39,10 @@ async def test_fcm_unregistered_error_purges_pairing():
 
     with (
         patch("firebase_admin._apps", True),
-        patch("firebase_admin.messaging.send", side_effect=messaging.UnregisteredError("App uninstalled")),
+        patch(
+            "firebase_admin.messaging.send",
+            side_effect=messaging.UnregisteredError("App uninstalled"),
+        ),
     ):
         await notifier.notify(payload, target_token="bad-token-123")
 
@@ -70,7 +73,10 @@ async def test_fcm_invalid_argument_error_purges_pairing():
 
     with (
         patch("firebase_admin._apps", True),
-        patch("firebase_admin.messaging.send", side_effect=exceptions.InvalidArgumentError("Invalid registration token")),
+        patch(
+            "firebase_admin.messaging.send",
+            side_effect=exceptions.InvalidArgumentError("Invalid registration token"),
+        ),
     ):
         await notifier.notify(payload, target_token="malformed-token")
 
@@ -96,11 +102,17 @@ async def test_token_refresh_endpoint(client):
     assert claim_resp.status_code == 200
 
     # 4. Token refresh for non-existent pairing should return 404
-    resp_404 = client.post("/v1/pairings/non-existent-id/token", json={"fcm_token": "new-token-abc"})
+    resp_404 = client.post(
+        "/v1/pairings/non-existent-id/token",
+        json={"fcm_token": "new-token-abc"},
+    )
     assert resp_404.status_code == 404
 
     # 5. Token refresh for claimed pairing should succeed
-    resp_ok = client.post(f"/v1/pairings/{pairing_id}/token", json={"fcm_token": "rotated-fcm-token-999"})
+    resp_ok = client.post(
+        f"/v1/pairings/{pairing_id}/token",
+        json={"fcm_token": "rotated-fcm-token-999"},
+    )
     assert resp_ok.status_code == 200
     assert resp_ok.json()["status"] == "ok"
     assert resp_ok.json()["pairing_id"] == pairing_id
