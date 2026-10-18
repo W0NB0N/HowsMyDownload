@@ -24,28 +24,50 @@ class SourceDownloadItem(BaseModel):
     """A single download item reported by a source (Extension/Client)."""
     model_config = ConfigDict(extra="ignore")
 
-    id: str = Field(..., description="Unique ID per download item in source")
-    filename: str = Field(..., description="File name or display title")
-    bytes_downloaded: int = Field(..., ge=0, description="Current received bytes")
+    id: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="Unique ID per download item in source",
+    )
+    filename: str = Field(
+        ...,
+        min_length=1,
+        max_length=1024,
+        description="File name or encrypted string",
+    )
+    bytes_downloaded: int = Field(
+        ...,
+        ge=0,
+        le=10_000_000_000_000_000,
+        description="Current received bytes",
+    )
     total_bytes: int | None = Field(
         default=None,
         ge=0,
+        le=10_000_000_000_000_000,
         description="Total expected bytes, null if unknown",
     )
     state: DownloadState = Field(..., description="Current download lifecycle state")
-    mime_type: str | None = Field(default=None, description="MIME type if available")
+    mime_type: str | None = Field(default=None, max_length=256, description="MIME type")
 
 
 class SamplePayload(BaseModel):
     """Payload sent by the Chrome extension or PC client to POST /v1/samples."""
     model_config = ConfigDict(extra="ignore")
 
-    pairing_id: str = Field(..., description="Pairing identifier")
-    source: str = Field(default="chrome", description="Source identifier")
-    pc_name: str = Field(default="Desktop-PC", description="Client hostname/display name")
+    pairing_id: str = Field(..., min_length=1, max_length=128, description="Pairing identifier")
+    source: str = Field(default="chrome", max_length=64, description="Source identifier")
+    pc_name: str = Field(
+        default="Desktop-PC",
+        min_length=1,
+        max_length=128,
+        description="Client hostname/display name",
+    )
     timestamp: datetime = Field(default_factory=utc_now, description="Generation timestamp")
     downloads: list[SourceDownloadItem] = Field(
         default_factory=list,
+        max_length=100,
         description="Active downloads batch",
     )
 
@@ -92,7 +114,12 @@ class SampleResponse(BaseModel):
 
 class CreatePairingRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    pc_name: str = Field(default="Desktop-PC", description="Client hostname/display name")
+    pc_name: str = Field(
+        default="Desktop-PC",
+        min_length=1,
+        max_length=128,
+        description="Client hostname/display name",
+    )
 
 
 class CreatePairingResponse(BaseModel):
@@ -104,7 +131,12 @@ class CreatePairingResponse(BaseModel):
 
 class ClaimPairingRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    fcm_token: str = Field(..., description="Firebase Cloud Messaging device token")
+    fcm_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Firebase Cloud Messaging device token",
+    )
 
 
 class ClaimPairingResponse(BaseModel):
@@ -123,9 +155,20 @@ class PairingStatusResponse(BaseModel):
 
 class UpdateTokenRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    fcm_token: str = Field(..., min_length=1, description="New FCM device registration token")
+    fcm_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="New FCM device registration token",
+    )
 
 
 class UpdateTokenResponse(BaseModel):
     status: str = "ok"
     pairing_id: str
+
+
+class RotateSecretResponse(BaseModel):
+    status: str = "ok"
+    pairing_id: str
+    new_secret: str

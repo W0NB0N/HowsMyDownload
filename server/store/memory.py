@@ -102,3 +102,13 @@ class InMemoryPairingStore(BasePairingStore):
                 return False
             record.fcm_token = fcm_token
             return True
+
+    async def rotate_secret(self, pairing_id: str, new_secret_hash: str) -> bool:
+        async with self._lock:
+            record = self._by_id.get(pairing_id)
+            if not record:
+                return False
+            self._by_secret_hash.pop(record.secret_hash, None)
+            record.secret_hash = new_secret_hash
+            self._by_secret_hash[new_secret_hash] = pairing_id
+            return True

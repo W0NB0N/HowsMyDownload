@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from server.api.health import router as health_router
 from server.api.pairings import router as pairings_router
@@ -66,6 +68,31 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     await tracker_manager.close()
 
+class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Enforces maximum payload size limits to protect against DoS and memory exhaustion."""
+
+    def __init__(self, app, max_content_length: int = 50 * 1024) -> None:
+        super().__init__(app)
+        self.max_content_length = max_content_length
+
+    async def dispatch(self, request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_content_length:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": (
+                                f"Payload too large. Maximum allowed size is "
+                                f"{self.max_content_length // 1024}KB."
+                            )
+                        },
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
+
 
 def create_app() -> FastAPI:
     """Creates and configures the FastAPI instance."""
@@ -76,7 +103,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Enable CORS for Chrome Extension / local dev
+    # 1. Payload size guard (max 50KB per request)
+    app.add_middleware(PayloadSizeLimitMiddleware, max_content_length=50 * 1024)
+
+    # 2. Enable CORS for Chrome Extension / local dev
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

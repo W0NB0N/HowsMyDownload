@@ -657,6 +657,18 @@ input:checked + .slider:before {
   color: var(--text-white);
 }
 
+.btn-secondary {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--purple-light);
+  width: 100%;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--purple-light);
+  background: var(--bg-elevated);
+}
+
 .btn-danger {
   background: #201111;
   border: 1px solid #7f1d1d;

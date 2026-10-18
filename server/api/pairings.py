@@ -13,6 +13,7 @@ from server.schemas import (
     CreatePairingRequest,
     CreatePairingResponse,
     PairingStatusResponse,
+    RotateSecretResponse,
     UpdateTokenRequest,
     UpdateTokenResponse,
 )
@@ -159,3 +160,32 @@ async def update_pairing_token(
         )
 
     return UpdateTokenResponse(status="ok", pairing_id=pairing_id)
+
+
+@router.post("/{pairing_id}/rotate-secret", response_model=RotateSecretResponse)
+async def rotate_pairing_secret(
+    pairing_id: str,
+    auth_record: Annotated[PairingRecord, Depends(get_authenticated_pairing)],
+    store: StoreDep,
+) -> RotateSecretResponse:
+    """Rotates the Bearer token secret for an authenticated pairing session."""
+    if auth_record.pairing_id != pairing_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized for this pairing ID",
+        )
+
+    new_secret = secrets.token_urlsafe(32)
+    new_secret_hash = hash_secret(new_secret)
+    success = await store.rotate_secret(pairing_id, new_secret_hash)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to rotate secret",
+        )
+
+    return RotateSecretResponse(
+        status="ok",
+        pairing_id=pairing_id,
+        new_secret=new_secret,
+    )

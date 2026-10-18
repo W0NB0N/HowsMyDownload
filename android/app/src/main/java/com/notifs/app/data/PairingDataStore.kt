@@ -31,6 +31,7 @@ class PairingDataStore(private val context: Context) {
         private val KEY_DISMISSED_IDS = stringPreferencesKey("dismissed_download_ids")
         private val KEY_HIDE_FILENAMES = booleanPreferencesKey("hide_filenames_in_notifs")
         private val KEY_LEGACY_HIDE_LOCK = booleanPreferencesKey("hide_filenames_lock_screen")
+        private val KEY_ENCRYPTION_KEY = stringPreferencesKey("encryption_key")
     }
 
     val fcmTokenFlow: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -77,13 +78,21 @@ class PairingDataStore(private val context: Context) {
         return context.dataStore.data.map { it[KEY_FCM_TOKEN] }.first()
     }
 
-    suspend fun savePairing(pairingId: String, serverUrl: String, pcName: String) {
+    suspend fun savePairing(
+        pairingId: String,
+        serverUrl: String,
+        pcName: String,
+        encryptionKey: String? = null
+    ) {
         context.dataStore.edit { prefs ->
             prefs[KEY_PAIRING_ID] = pairingId
             prefs[KEY_SERVER_URL] = serverUrl
             prefs[KEY_PAIRED_PC_NAME] = pcName
             prefs[KEY_IS_PAIRED] = true
             prefs[KEY_LAST_SEQ] = 0
+            if (encryptionKey != null) {
+                prefs[KEY_ENCRYPTION_KEY] = encryptionKey
+            }
         }
     }
 
@@ -92,9 +101,14 @@ class PairingDataStore(private val context: Context) {
             prefs.remove(KEY_PAIRING_ID)
             prefs.remove(KEY_SERVER_URL)
             prefs.remove(KEY_PAIRED_PC_NAME)
+            prefs.remove(KEY_ENCRYPTION_KEY)
             prefs[KEY_IS_PAIRED] = false
             prefs[KEY_LAST_SEQ] = 0
         }
+    }
+
+    suspend fun getEncryptionKey(): String? {
+        return context.dataStore.data.map { it[KEY_ENCRYPTION_KEY] }.first()
     }
 
     suspend fun getPairingInfo(): PairingInfo {

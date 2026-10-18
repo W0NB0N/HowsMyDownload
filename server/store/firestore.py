@@ -142,3 +142,15 @@ class FirestorePairingStore(BasePairingStore):
             return False
 
         return await asyncio.to_thread(_sync_update)
+
+    async def rotate_secret(self, pairing_id: str, new_secret_hash: str) -> bool:
+        def _sync_rotate():
+            db = self._get_db()
+            doc_ref = db.collection(self.collection_name).document(pairing_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                doc_ref.update({"secret_hash": new_secret_hash})
+                return True
+            return False
+
+        return await asyncio.to_thread(_sync_rotate)

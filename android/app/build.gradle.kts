@@ -65,4 +65,7 @@ dependencies {
 
     // OkHttp
     implementation(libs.okhttp)
+
+    // Unit Testing
+    testImplementation("junit:junit:4.13.2")
 }

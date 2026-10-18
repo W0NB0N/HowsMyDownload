@@ -74,3 +74,8 @@ class BasePairingStore(ABC):
     async def update_fcm_token(self, pairing_id: str, fcm_token: str) -> bool:
         """Updates the registered FCM token for an existing pairing."""
         pass
+
+    @abstractmethod
+    async def rotate_secret(self, pairing_id: str, new_secret_hash: str) -> bool:
+        """Rotates the bearer secret hash for an existing pairing."""
+        pass

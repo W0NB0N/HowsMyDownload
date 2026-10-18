@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from server.auth import get_authenticated_pairing
+from server.rate_limiter import check_sample_rate_limit
 from server.schemas import SamplePayload, SampleResponse
 from server.store.base import PairingRecord
 from server.tracker.manager import TrackerManager
@@ -20,7 +21,11 @@ TrackerDep = Annotated[TrackerManager, Depends(get_tracker)]
 AuthPairingDep = Annotated[PairingRecord, Depends(get_authenticated_pairing)]
 
 
-@router.post("/samples", response_model=SampleResponse)
+@router.post(
+    "/samples",
+    response_model=SampleResponse,
+    dependencies=[Depends(check_sample_rate_limit)],
+)
 async def receive_sample(
     payload: SamplePayload,
     tracker: TrackerDep,
