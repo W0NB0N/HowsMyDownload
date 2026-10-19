@@ -302,4 +302,4 @@ sudo certbot renew --dry-run
 | Certbot challenge failure | Port 80 not reachable or DNS not resolved | Check `nslookup notifs.yourdomain.com` and ensure Nginx is serving `/.well-known/acme-challenge/` from `/var/www/certbot`. |
 | 502 Bad Gateway from Nginx | FastAPI container not running or failing healthcheck | Run `sudo journalctl -u notifs-api.service -e` or `docker logs notifs-api` to inspect startup errors. |
 | Firebase authentication error | Missing or invalid `service-account.json` | Ensure `service-account.json` exists at `/opt/notifs/deploy/service-account.json` and has read permissions. |
-| 429 Too Many Requests | Rate limit exceeded | Nginx enforces `30 req/s` with burst of 20. If needed, adjust `limit_req_zone` in `/etc/nginx/sites-available/notifs.conf`. |
+| 429 Too Many Requests | Rate limit exceeded | Nginx allows `5 req/s` per IP (burst 20). The app limits samples to 10 per 10 s per pairing, and pairing create/claim to 10/min per IP; check the `Retry-After` header. If needed, adjust `limit_req_zone` in `/etc/nginx/sites-available/notifs.conf`. |
