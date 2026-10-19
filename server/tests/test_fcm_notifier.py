@@ -3,10 +3,12 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from firebase_admin import exceptions, messaging
 
 from server.notifier.composite import CompositeNotifier
 from server.notifier.fcm import FCMNotifier
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
+from server.store.memory import InMemoryPairingStore
 
 
 @pytest.fixture
@@ -84,3 +86,54 @@ async def test_composite_notifier_dispatches_all(sample_push_payload: PushPayloa
 
     mock1.notify.assert_called_once_with(sample_push_payload)
     mock2.notify.assert_called_once_with(sample_push_payload)
+
+
+# --- Dead-token classification: which FCM errors may purge a pairing ------------------
+
+
+async def _store_with_pairing(pairing_id: str) -> InMemoryPairingStore:
+    store = InMemoryPairingStore()
+    await store.create_pairing(pairing_id=pairing_id, code="CODE01", secret_hash="h", pc_name="PC")
+    return store
+
+
+async def _send_with_error(store: InMemoryPairingStore, pairing_id: str, error: Exception):
+    payload = PushPayload(seq=1, pairing_id=pairing_id, downloads=[])
+    with (
+        patch("firebase_admin._apps", True),
+        patch("firebase_admin.messaging.send", side_effect=error),
+    ):
+        await FCMNotifier(cred_path=None, store=store).notify(payload, target_token="tok")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        messaging.UnregisteredError("App uninstalled"),
+        messaging.SenderIdMismatchError("Token belongs to another project"),
+        exceptions.InvalidArgumentError(
+            "The registration token is not a valid FCM registration token"
+        ),
+    ],
+)
+async def test_dead_token_errors_purge_pairing(error):
+    store = await _store_with_pairing("pair-dead")
+    await _send_with_error(store, "pair-dead", error)
+    assert await store.get_pairing("pair-dead") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        # Rejected *message* (e.g. too big): says nothing about the token
+        exceptions.InvalidArgumentError("Message is too big"),
+        exceptions.UnavailableError("FCM temporarily unavailable"),
+        messaging.QuotaExceededError("Quota exceeded"),
+    ],
+)
+async def test_message_or_transient_errors_keep_pairing(error):
+    store = await _store_with_pairing("pair-keep")
+    await _send_with_error(store, "pair-keep", error)
+    assert await store.get_pairing("pair-keep") is not None
