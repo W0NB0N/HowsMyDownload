@@ -283,7 +283,8 @@ document.addEventListener("DOMContentLoaded", async () => {
           isPaired: false,
           pairingId: null,
           pairingSecret: null,
-          pairingCode: null
+          pairingCode: null,
+          encryptionKey: null
         });
         updatePairingUI(false);
       }
