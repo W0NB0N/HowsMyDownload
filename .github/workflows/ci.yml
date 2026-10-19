@@ -105,6 +105,6 @@ jobs:
             console.log('✓ manifest.json is valid MV3: ' + manifest.name + ' v' + manifest.version);
           "
 
-      - name: Run Extension Unit Tests (Poller & AES Crypto)
+      - name: Run Extension Unit Tests (Poller, API client & AES Crypto)
         run: |
-          node --test test_poller.js test_crypto.js
+          node --test test_poller.js test_crypto.js test_api.js
