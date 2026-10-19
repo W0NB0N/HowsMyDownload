@@ -3,6 +3,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+
 from server.main import create_app
 from server.notifier.base import BaseNotifier
 from server.schemas import PushPayload

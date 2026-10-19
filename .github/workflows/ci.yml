@@ -17,6 +17,8 @@ jobs:
     defaults:
       run:
         working-directory: server
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

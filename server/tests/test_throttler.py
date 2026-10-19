@@ -6,6 +6,7 @@ Covers State-Change Bypass, Queue Coalescing, and Strict Sequence Numbering.
 import asyncio
 
 import pytest
+
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
 from server.tests.conftest import MockNotifier
 from server.throttler.push_throttler import PushThrottler

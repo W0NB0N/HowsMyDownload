@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+
 from server.auth import hash_secret
 from server.store.memory import InMemoryPairingStore
 

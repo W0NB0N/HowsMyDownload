@@ -1,6 +1,7 @@
 """Integration tests for FastAPI endpoints: /health and /v1/samples."""
 
 from fastapi.testclient import TestClient
+
 from server.tests.conftest import MockNotifier
 
 

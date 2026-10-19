@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from firebase_admin import exceptions, messaging
+
 from server.notifier.fcm import FCMNotifier
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
 from server.store.memory import InMemoryPairingStore

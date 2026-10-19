@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+
 from server.auth import get_authenticated_pairing
 from server.rate_limiter import check_sample_rate_limit
 from server.schemas import SamplePayload, SampleResponse
