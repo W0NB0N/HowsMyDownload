@@ -93,6 +93,11 @@ class EvaluatedDownloadItem(BaseModel):
 class PushPayload(BaseModel):
     """Payload delivered to Notifier backends (Console, FCM, LAN WebSocket)."""
     seq: int = Field(..., ge=1, description="Incrementing sequence number per pairing")
+    epoch: int = Field(
+        default=0,
+        ge=0,
+        description="Server boot time (ms). seq restarts at 1 whenever epoch changes",
+    )
     sent_at: datetime = Field(default_factory=utc_now, description="Server dispatch timestamp")
     source: str = Field(default="chrome")
     pc_name: str = Field(default="Desktop-PC")

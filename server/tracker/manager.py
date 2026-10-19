@@ -26,6 +26,8 @@ class TrackerManager:
         self.notifier = notifier
         self.cleanup_ttl_sec = cleanup_ttl_sec
         self.throttler = throttler
+        # Server boot marker sent with every push (the throttler owns it when present)
+        self.epoch = throttler.epoch if throttler else int(time.time() * 1000)
         # Map: (pairing_id, download_id) -> TrackedDownload
         self._downloads: dict[tuple[str, str], TrackedDownload] = {}
         # Map: pairing_id -> current seq number (used when no throttler configured)
@@ -89,6 +91,7 @@ class TrackerManager:
                 await self.throttler.submit(push_payload, target_token=target_token)
             else:
                 push_payload.seq = self._next_seq(sample.pairing_id)
+                push_payload.epoch = self.epoch
                 await self.notifier.notify(push_payload, target_token=target_token)
 
             # Run periodic cleanup
@@ -114,6 +117,15 @@ class TrackerManager:
         if pairing_id is None:
             return len(self._downloads)
         return sum(1 for (p_id, _) in self._downloads if p_id == pairing_id)
+
+    async def forget_pairing(self, pairing_id: str) -> None:
+        """Drops tracked downloads and push state for an unpaired session."""
+        async with self._lock:
+            for key in [k for k in self._downloads if k[0] == pairing_id]:
+                del self._downloads[key]
+            self._seq_map.pop(pairing_id, None)
+        if self.throttler:
+            await self.throttler.forget(pairing_id)
 
     async def close(self) -> None:
         """Closes throttler resources."""

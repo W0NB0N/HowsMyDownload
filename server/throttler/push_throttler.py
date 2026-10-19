@@ -5,6 +5,10 @@ state transitions (starting, downloading -> paused, completed, failed, or downlo
 to bypass the throttle immediately. Discarded interim progress updates are coalesced into the
 single latest PushPayload, and strictly monotonic sequence numbers are assigned only upon
 actual over-the-wire dispatch.
+
+Sequence numbers live in memory and restart at 1 when the process restarts. Every payload
+therefore carries `epoch` (the throttler's creation time in ms). The phone only compares seq
+within one epoch and treats a new epoch as a fresh stream (see android SequenceGate.kt).
 """
 
 import asyncio
@@ -20,9 +24,15 @@ logger = logging.getLogger("notifs.throttler")
 class PushThrottler:
     """Per-pairing rate limiter and strict sequence assigner for push notifications."""
 
-    def __init__(self, notifier: BaseNotifier, min_interval_sec: float = 2.0) -> None:
+    def __init__(
+        self,
+        notifier: BaseNotifier,
+        min_interval_sec: float = 2.0,
+        epoch: int | None = None,
+    ) -> None:
         self.notifier = notifier
         self.min_interval_sec = min_interval_sec
+        self.epoch = epoch if epoch is not None else int(time.time() * 1000)
 
         # pairing_id -> timestamp of last dispatched push
         self._last_push_times: dict[str, float] = {}
@@ -85,6 +95,7 @@ class PushThrottler:
 
         # Monotonically assign sequence number ONLY upon actual dispatch
         payload.seq = self._next_seq(pairing_id)
+        payload.epoch = self.epoch
 
         # Record dispatch timestamp and latest states
         self._last_push_times[pairing_id] = time.time()
@@ -167,6 +178,17 @@ class PushThrottler:
                 if pending:
                     payload, token = pending
                     await self._dispatch_now(payload, token)
+
+    async def forget(self, pairing_id: str) -> None:
+        """Drops all throttle state for an unpaired session."""
+        async with self._lock:
+            task = self._flush_tasks.pop(pairing_id, None)
+            if task and not task.done():
+                task.cancel()
+            self._pending_payloads.pop(pairing_id, None)
+            self._last_push_times.pop(pairing_id, None)
+            self._last_known_states.pop(pairing_id, None)
+            self._seq_map.pop(pairing_id, None)
 
     async def close(self) -> None:
         """Cancels all active delayed flush tasks."""
