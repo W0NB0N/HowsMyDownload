@@ -16,7 +16,11 @@ class PairingRecord(BaseModel):
 
     pairing_id: str = Field(..., description="Unique UUID for this pairing")
     code: str = Field(..., description="Short alphanumeric claim code (e.g. 6 chars)")
-    secret_hash: str = Field(..., description="SHA-256 hash of the bearer token secret")
+    secret_hash: str = Field(..., description="SHA-256 hash of the extension's bearer secret")
+    device_secret_hash: str | None = Field(
+        default=None,
+        description="SHA-256 hash of the phone's bearer secret (issued at claim time)",
+    )
     pc_name: str = Field(default="Desktop-PC", description="Client hostname")
     fcm_token: str | None = Field(default=None, description="Paired mobile device FCM token")
     created_at: datetime = Field(default_factory=utc_now)
@@ -28,6 +32,14 @@ class PairingRecord(BaseModel):
     @property
     def is_expired(self) -> bool:
         return utc_now() > self.expires_at
+
+    @property
+    def is_usable(self) -> bool:
+        """Claimed pairings never expire; an unclaimed one is only valid until its code expires."""
+        return self.is_claimed or not self.is_expired
+
+
+MAX_CLAIM_ATTEMPTS = 5
 
 
 class BasePairingStore(ABC):
@@ -61,8 +73,16 @@ class BasePairingStore(ABC):
         pass
 
     @abstractmethod
-    async def claim_pairing(self, code: str, fcm_token: str) -> PairingRecord | None:
-        """Attempts to claim a pairing code using the mobile device's FCM token."""
+    async def claim_pairing(
+        self,
+        code: str,
+        fcm_token: str,
+        device_secret_hash: str,
+    ) -> PairingRecord | None:
+        """Claims an unexpired, unclaimed code for a phone. Returns None on any failure.
+
+        Every attempt against an existing code counts toward MAX_CLAIM_ATTEMPTS.
+        """
         pass
 
     @abstractmethod

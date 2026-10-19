@@ -91,11 +91,9 @@ if [ ! -f "${DEPLOY_DIR}/deploy/.env" ]; then
         cat << 'EOF' > "${DEPLOY_DIR}/deploy/.env"
 STORE_TYPE=firestore
 NOTIFIER_TYPE=fcm
-REQUIRE_AUTH=true
 GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
 PORT=8000
 HOST=0.0.0.0
-CORS_ORIGINS=*
 EOF
     fi
     echo -e "${YELLOW}Created template .env at ${DEPLOY_DIR}/deploy/.env.${NC}"
