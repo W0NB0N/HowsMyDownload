@@ -6,8 +6,9 @@ from datetime import timedelta
 
 import firebase_admin
 from firebase_admin import firestore
+from google.cloud.firestore import transactional
 
-from server.store.base import BasePairingStore, PairingRecord, utc_now
+from server.store.base import MAX_CLAIM_ATTEMPTS, BasePairingStore, PairingRecord, utc_now
 
 logger = logging.getLogger("notifs.store.firestore")
 
@@ -94,30 +95,44 @@ class FirestorePairingStore(BasePairingStore):
 
         return await asyncio.to_thread(_sync_get)
 
-    async def claim_pairing(self, code: str, fcm_token: str) -> PairingRecord | None:
+    async def claim_pairing(
+        self,
+        code: str,
+        fcm_token: str,
+        device_secret_hash: str,
+    ) -> PairingRecord | None:
         def _sync_claim():
             db = self._get_db()
             query = (
                 db.collection(self.collection_name)
                 .where("code", "==", code.upper())
                 .limit(1)
-                .get()
             )
 
-            for doc in query:
-                record = PairingRecord.model_validate(doc.to_dict())
-                if record.is_expired or record.claim_attempts >= 5 or record.is_claimed:
-                    doc.reference.update({"claim_attempts": record.claim_attempts + 1})
-                    return None
+            # Read-check-write inside a transaction so two concurrent claims of the same
+            # code cannot both succeed and the attempt counter cannot lose increments.
+            @transactional
+            def _claim_in_txn(txn):
+                for doc in txn.get(query):
+                    record = PairingRecord.model_validate(doc.to_dict())
+                    record.claim_attempts += 1
+                    if (
+                        record.is_expired
+                        or record.is_claimed
+                        or record.claim_attempts > MAX_CLAIM_ATTEMPTS
+                    ):
+                        txn.update(doc.reference, {"claim_attempts": record.claim_attempts})
+                        return None
 
-                record.fcm_token = fcm_token
-                record.is_claimed = True
-                record.claimed_at = utc_now()
-                record.claim_attempts += 1
+                    record.fcm_token = fcm_token
+                    record.device_secret_hash = device_secret_hash
+                    record.is_claimed = True
+                    record.claimed_at = utc_now()
+                    txn.update(doc.reference, record.model_dump(mode="json"))
+                    return record
+                return None
 
-                doc.reference.update(record.model_dump(mode="json"))
-                return record
-            return None
+            return _claim_in_txn(db.transaction())
 
         return await asyncio.to_thread(_sync_claim)
 

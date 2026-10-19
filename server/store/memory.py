@@ -3,7 +3,7 @@
 import asyncio
 from datetime import timedelta
 
-from server.store.base import BasePairingStore, PairingRecord, utc_now
+from server.store.base import MAX_CLAIM_ATTEMPTS, BasePairingStore, PairingRecord, utc_now
 
 
 class InMemoryPairingStore(BasePairingStore):
@@ -24,6 +24,7 @@ class InMemoryPairingStore(BasePairingStore):
         expires_in_sec: int = 300,
     ) -> PairingRecord:
         async with self._lock:
+            self._purge_expired_unclaimed()
             now = utc_now()
             record = PairingRecord(
                 pairing_id=pairing_id,
@@ -39,6 +40,19 @@ class InMemoryPairingStore(BasePairingStore):
             self._by_code[code.upper()] = pairing_id
             self._by_secret_hash[secret_hash] = pairing_id
             return record
+
+    def _purge_expired_unclaimed(self) -> None:
+        """Drops abandoned QR sessions so unclaimed pairings cannot accumulate forever."""
+        for pairing_id, record in list(self._by_id.items()):
+            if not record.is_usable:
+                self._remove(pairing_id)
+
+    def _remove(self, pairing_id: str) -> PairingRecord | None:
+        record = self._by_id.pop(pairing_id, None)
+        if record:
+            self._by_code.pop(record.code.upper(), None)
+            self._by_secret_hash.pop(record.secret_hash, None)
+        return record
 
     async def get_pairing(self, pairing_id: str) -> PairingRecord | None:
         async with self._lock:
@@ -58,42 +72,35 @@ class InMemoryPairingStore(BasePairingStore):
                 return None
             return self._by_id.get(p_id)
 
-    async def claim_pairing(self, code: str, fcm_token: str) -> PairingRecord | None:
+    async def claim_pairing(
+        self,
+        code: str,
+        fcm_token: str,
+        device_secret_hash: str,
+    ) -> PairingRecord | None:
         async with self._lock:
             p_id = self._by_code.get(code.upper())
-            if not p_id:
-                return None
-
-            record = self._by_id.get(p_id)
-            if not record:
-                return None
-
-            # Check expiration and attempts limit (max 5)
-            if record.is_expired:
-                return None
-
-            if record.claim_attempts >= 5:
+            record = self._by_id.get(p_id) if p_id else None
+            if record is None:
                 return None
 
             record.claim_attempts += 1
-
-            if record.is_claimed:
+            if (
+                record.is_expired
+                or record.is_claimed
+                or record.claim_attempts > MAX_CLAIM_ATTEMPTS
+            ):
                 return None
 
-            # Mark claimed
             record.fcm_token = fcm_token
+            record.device_secret_hash = device_secret_hash
             record.is_claimed = True
             record.claimed_at = utc_now()
             return record
 
     async def delete_pairing(self, pairing_id: str) -> bool:
         async with self._lock:
-            record = self._by_id.pop(pairing_id, None)
-            if not record:
-                return False
-            self._by_code.pop(record.code.upper(), None)
-            self._by_secret_hash.pop(record.secret_hash, None)
-            return True
+            return self._remove(pairing_id) is not None
 
     async def update_fcm_token(self, pairing_id: str, fcm_token: str) -> bool:
         async with self._lock:

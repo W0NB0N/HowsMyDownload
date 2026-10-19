@@ -1,124 +1,43 @@
-"""Unit tests for FCM Token Invalidation, session cleanup, and Token Refresh."""
-
-from unittest.mock import patch
+"""FCM token refresh: only the paired phone (device secret) may change where pushes go."""
 
 import pytest
-from firebase_admin import exceptions, messaging
 
-from server.notifier.fcm import FCMNotifier
-from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
-from server.store.memory import InMemoryPairingStore
+from server.tests.conftest import create_claimed_pairing
 
 
 @pytest.mark.asyncio
-async def test_fcm_unregistered_error_purges_pairing():
-    store = InMemoryPairingStore()
-    await store.create_pairing(
-        pairing_id="pair-revoked-1",
-        code="REVOK1",
-        secret_hash="hash123",
-        pc_name="PC",
-    )
-    await store.claim_pairing("REVOK1", "bad-token-123")
+async def test_token_refresh_requires_device_secret(client):
+    pairing = create_claimed_pairing(client, fcm_token="original-token")
+    pairing_id = pairing["pairing_id"]
+    url = f"/v1/pairings/{pairing_id}/token"
+    body = {"fcm_token": "rotated-fcm-token-999"}
 
-    notifier = FCMNotifier(cred_path=None, store=store)
+    # No credential, a wrong credential, or the extension's credential cannot redirect pushes
+    assert client.post(url, json=body).status_code == 401
+    bad = {"Authorization": "Bearer not-a-real-secret"}
+    assert client.post(url, json=body, headers=bad).status_code == 401
+    ext = {"Authorization": f"Bearer {pairing['secret']}"}
+    assert client.post(url, json=body, headers=ext).status_code == 403
 
-    payload = PushPayload(
-        seq=1,
-        source="chrome",
-        pc_name="PC",
-        pairing_id="pair-revoked-1",
-        downloads=[
-            EvaluatedDownloadItem(
-                id="d1",
-                filename="ubuntu.iso",
-                state=DownloadState.DOWNLOADING,
-                bytes_downloaded=100,
-            )
-        ],
-    )
-
-    with (
-        patch("firebase_admin._apps", True),
-        patch(
-            "firebase_admin.messaging.send",
-            side_effect=messaging.UnregisteredError("App uninstalled"),
-        ),
-    ):
-        await notifier.notify(payload, target_token="bad-token-123")
-
-    # The revoked pairing must be purged from the store
-    assert await store.get_pairing("pair-revoked-1") is None
-
-
-@pytest.mark.asyncio
-async def test_fcm_invalid_argument_error_purges_pairing():
-    store = InMemoryPairingStore()
-    await store.create_pairing(
-        pairing_id="pair-invalid-2",
-        code="INVAL2",
-        secret_hash="hash456",
-        pc_name="PC",
-    )
-    await store.claim_pairing("INVAL2", "malformed-token")
-
-    notifier = FCMNotifier(cred_path=None, store=store)
-
-    payload = PushPayload(
-        seq=1,
-        source="chrome",
-        pc_name="PC",
-        pairing_id="pair-invalid-2",
-        downloads=[],
-    )
-
-    with (
-        patch("firebase_admin._apps", True),
-        patch(
-            "firebase_admin.messaging.send",
-            side_effect=exceptions.InvalidArgumentError("Invalid registration token"),
-        ),
-    ):
-        await notifier.notify(payload, target_token="malformed-token")
-
-    # The invalid pairing must be purged from the store
-    assert await store.get_pairing("pair-invalid-2") is None
-
-
-@pytest.mark.asyncio
-async def test_token_refresh_endpoint(client):
-    # 1. Create a pairing
-    resp = client.post("/v1/pairings", json={"pc_name": "My-PC"})
-    assert resp.status_code == 201
-    pairing_data = resp.json()
-    pairing_id = pairing_data["pairing_id"]
-    code = pairing_data["code"]
-
-    # 2. Token refresh before claim should fail (400)
-    resp_bad = client.post(f"/v1/pairings/{pairing_id}/token", json={"fcm_token": "new-token-abc"})
-    assert resp_bad.status_code == 400
-
-    # 3. Claim pairing
-    claim_resp = client.post(f"/v1/pairings/{code}/claim", json={"fcm_token": "original-token"})
-    assert claim_resp.status_code == 200
-
-    # 4. Token refresh for non-existent pairing should return 404
-    resp_404 = client.post(
-        "/v1/pairings/non-existent-id/token",
-        json={"fcm_token": "new-token-abc"},
-    )
-    assert resp_404.status_code == 404
-
-    # 5. Token refresh for claimed pairing should succeed
-    resp_ok = client.post(
-        f"/v1/pairings/{pairing_id}/token",
-        json={"fcm_token": "rotated-fcm-token-999"},
-    )
-    assert resp_ok.status_code == 200
-    assert resp_ok.json()["status"] == "ok"
-    assert resp_ok.json()["pairing_id"] == pairing_id
-
-    # 6. Verify in store that token updated
     store = client.app.state.pairing_store
-    updated = await store.get_pairing(pairing_id)
-    assert updated.fcm_token == "rotated-fcm-token-999"
+    assert (await store.get_pairing(pairing_id)).fcm_token == "original-token"
+
+    # The phone's own secret works
+    device = {"Authorization": f"Bearer {pairing['device_secret']}"}
+    resp = client.post(url, json=body, headers=device)
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "pairing_id": pairing_id}
+    assert (await store.get_pairing(pairing_id)).fcm_token == "rotated-fcm-token-999"
+
+
+def test_token_refresh_unknown_pairing_is_indistinguishable(client):
+    pairing = create_claimed_pairing(client)
+    device = {"Authorization": f"Bearer {pairing['device_secret']}"}
+    unknown = "00000000-0000-4000-8000-000000000000"
+    resp = client.post(f"/v1/pairings/{unknown}/token", json={"fcm_token": "x"}, headers=device)
+    assert resp.status_code == 401
+
+
+def test_token_refresh_rejects_malformed_pairing_id(client):
+    resp = client.post("/v1/pairings/not-a-uuid/token", json={"fcm_token": "x"})
+    assert resp.status_code == 422

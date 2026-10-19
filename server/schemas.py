@@ -10,6 +10,14 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+# Server-issued identifiers: pairing IDs are UUID4 strings, claim codes are 6 chars drawn
+# from an unambiguous uppercase alphabet (case-insensitive on input).
+PAIRING_ID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+PAIRING_CODE_PATTERN = r"^[A-Za-z0-9]{6}$"
+
+
 class DownloadState(StrEnum):
     STARTING = "starting"
     DOWNLOADING = "downloading"
@@ -148,6 +156,10 @@ class ClaimPairingResponse(BaseModel):
     status: str = "ok"
     pairing_id: str
     pc_name: str
+    device_secret: str = Field(
+        ...,
+        description="Bearer credential for the phone (token refresh, unpair). Shown once.",
+    )
 
 
 class PairingStatusResponse(BaseModel):

@@ -19,17 +19,13 @@ class Settings(BaseSettings):
     # Notifier selection
     NOTIFIER_TYPE: str = Field(
         default="console",
-        description="Notifier backend: console, fcm, lan, multi"
+        description="Notifier backend: console | fcm (console + FCM; aliases both, multi)"
     )
 
     # Storage backend
     STORE_TYPE: str = Field(
         default="memory",
-        description="Pairing storage backend: memory, sqlite, firestore"
-    )
-    SQLITE_PATH: str = Field(
-        default="notifs.db",
-        description="Path to SQLite database file"
+        description="Pairing storage backend: memory | firestore"
     )
 
     # Firebase credentials (used in Phase 5+)
