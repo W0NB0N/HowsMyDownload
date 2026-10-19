@@ -2,6 +2,11 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["api", "store", "tracker", "notifier", "throttler"]
+py-modules = ["main", "schemas", "auth", "config", "rate_limiter"]
+
+
 [project]
 name = "notifs-server"
 version = "0.1.0"
