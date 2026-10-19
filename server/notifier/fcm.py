@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import firebase_admin
 from firebase_admin import credentials, exceptions, messaging
+
 from server.notifier.base import BaseNotifier
 from server.schemas import PushPayload
 from server.store.base import BasePairingStore

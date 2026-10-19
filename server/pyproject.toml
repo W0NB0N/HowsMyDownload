@@ -3,8 +3,16 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["api", "store", "tracker", "notifier", "throttler"]
-py-modules = ["main", "schemas", "auth", "config", "rate_limiter"]
+package-dir = {"server" = "."}
+packages = [
+    "server",
+    "server.api",
+    "server.notifier",
+    "server.store",
+    "server.throttler",
+    "server.tracker",
+    "server.tests",
+]
 
 
 [project]
@@ -45,3 +53,5 @@ minversion = "7.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+pythonpath = [".."]
+

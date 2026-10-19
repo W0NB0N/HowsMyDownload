@@ -1,6 +1,7 @@
 """Unit and integration tests for authentication and authorized sample ingestion."""
 
 from fastapi.testclient import TestClient
+
 from server.tests.conftest import MockNotifier
 
 

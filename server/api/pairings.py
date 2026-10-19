@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
+
 from server.auth import StoreDep, get_authenticated_pairing, hash_secret, security
 from server.schemas import (
     ClaimPairingRequest,

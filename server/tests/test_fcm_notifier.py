@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from server.notifier.composite import CompositeNotifier
 from server.notifier.fcm import FCMNotifier
 from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
