@@ -40,13 +40,10 @@ import com.notifs.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import com.notifs.app.data.PairingApi
+import com.notifs.app.util.CryptoUtils
 import org.json.JSONObject
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @Composable
 fun QrScannerScreen(
@@ -346,6 +343,11 @@ private suspend fun handleQrPayload(
                 withContext(Dispatchers.Main) { onError("Invalid QR code payload") }
                 return@withContext
             }
+            if (encryptionKey != null && !CryptoUtils.isValidKeyHex(encryptionKey)) {
+                // A corrupted key would make every filename undecryptable: refuse to pair
+                withContext(Dispatchers.Main) { onError("QR code has an invalid encryption key") }
+                return@withContext
+            }
 
             val token = fcmToken ?: dataStore.getFcmToken()
             if (token.isNullOrBlank()) {
@@ -353,45 +355,22 @@ private suspend fun handleQrPayload(
                 return@withContext
             }
 
-            val cleanUrl = serverUrl.trimEnd('/')
-            val endpoint = "$cleanUrl/v1/pairings/$code/claim"
+            val cleanUrl = serverUrl.trim().trimEnd('/')
+            val result = PairingApi.claim(cleanUrl, code, token)
+            dataStore.savePairing(
+                pairingId = result.pairingId,
+                serverUrl = cleanUrl,
+                pcName = result.pcName.ifBlank { pcName },
+                deviceSecret = result.deviceSecret,
+                encryptionKey = encryptionKey?.lowercase()
+            )
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .build()
-
-            val jsonBody = JSONObject().apply {
-                put("fcm_token", token)
-            }.toString()
-
-            val request = Request.Builder()
-                .url(endpoint)
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            val response = client.newCall(request).execute()
-            val respBody = response.body?.string() ?: ""
-
-            if (response.isSuccessful) {
-                val respJson = JSONObject(respBody)
-                val pairingId = respJson.optString("pairing_id", "")
-                val respPcName = respJson.optString("pc_name", pcName)
-
-                dataStore.savePairing(
-                    pairingId = pairingId,
-                    serverUrl = cleanUrl,
-                    pcName = respPcName,
-                    encryptionKey = encryptionKey
-                )
-
-                withContext(Dispatchers.Main) {
-                    onSuccess()
-                }
-            } else {
-                withContext(Dispatchers.Main) {
-                    onError("Claim failed (${response.code})")
-                }
+            withContext(Dispatchers.Main) {
+                onSuccess()
+            }
+        } catch (e: PairingApi.ApiException) {
+            withContext(Dispatchers.Main) {
+                onError(e.message ?: "Claim failed (${e.code})")
             }
         } catch (e: Exception) {
             val msg = e.message ?: "Network error"

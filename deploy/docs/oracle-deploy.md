@@ -196,6 +196,11 @@ sudo ./deploy/oracle-setup.sh
      ```
    - Click **Publish**. *(Note: The backend connects using the Admin SDK and bypasses these rules, keeping your database completely secure from unauthorized client queries).*
 
+4. Enable automatic cleanup of abandoned QR sessions:
+   - Go to **Firestore Database** $\rightarrow$ **TTL** $\rightarrow$ **Create policy**.
+   - Collection group: `pairings`, timestamp field: `purge_at`.
+   - The server sets `purge_at` only on unclaimed pairings (their 5-minute code expiry) and removes the field when a phone claims the code, so real pairings are never deleted. Without this policy, unclaimed pairings stay in Firestore indefinitely (they still cannot authenticate once expired). Firestore usually deletes expired documents within 24 hours.
+
 ---
 
 ### Step 7: Obtain SSL Certificate & Activate Production Nginx
@@ -302,4 +307,4 @@ sudo certbot renew --dry-run
 | Certbot challenge failure | Port 80 not reachable or DNS not resolved | Check `nslookup notifs.yourdomain.com` and ensure Nginx is serving `/.well-known/acme-challenge/` from `/var/www/certbot`. |
 | 502 Bad Gateway from Nginx | FastAPI container not running or failing healthcheck | Run `sudo journalctl -u notifs-api.service -e` or `docker logs notifs-api` to inspect startup errors. |
 | Firebase authentication error | Missing or invalid `service-account.json` | Ensure `service-account.json` exists at `/opt/notifs/deploy/service-account.json` and has read permissions. |
-| 429 Too Many Requests | Rate limit exceeded | Nginx enforces `30 req/s` with burst of 20. If needed, adjust `limit_req_zone` in `/etc/nginx/sites-available/notifs.conf`. |
+| 429 Too Many Requests | Rate limit exceeded | Nginx allows `5 req/s` per IP (burst 20). The app limits samples to 10 per 10 s per pairing, and pairing create/claim to 10/min per IP; check the `Retry-After` header. If needed, adjust `limit_req_zone` in `/etc/nginx/sites-available/notifs.conf`. |

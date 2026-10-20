@@ -10,6 +10,14 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+# Server-issued identifiers: pairing IDs are UUID4 strings, claim codes are 6 chars drawn
+# from an unambiguous uppercase alphabet (case-insensitive on input).
+PAIRING_ID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+PAIRING_CODE_PATTERN = r"^[A-Za-z0-9]{6}$"
+
+
 class DownloadState(StrEnum):
     STARTING = "starting"
     DOWNLOADING = "downloading"
@@ -93,6 +101,11 @@ class EvaluatedDownloadItem(BaseModel):
 class PushPayload(BaseModel):
     """Payload delivered to Notifier backends (Console, FCM, LAN WebSocket)."""
     seq: int = Field(..., ge=1, description="Incrementing sequence number per pairing")
+    epoch: int = Field(
+        default=0,
+        ge=0,
+        description="Server boot time (ms). seq restarts at 1 whenever epoch changes",
+    )
     sent_at: datetime = Field(default_factory=utc_now, description="Server dispatch timestamp")
     source: str = Field(default="chrome")
     pc_name: str = Field(default="Desktop-PC")
@@ -143,6 +156,10 @@ class ClaimPairingResponse(BaseModel):
     status: str = "ok"
     pairing_id: str
     pc_name: str
+    device_secret: str = Field(
+        ...,
+        description="Bearer credential for the phone (token refresh, unpair). Shown once.",
+    )
 
 
 class PairingStatusResponse(BaseModel):

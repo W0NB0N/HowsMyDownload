@@ -2,22 +2,34 @@
 
 import asyncio
 import logging
+import random
+import time
 from datetime import timedelta
 
 import firebase_admin
 from firebase_admin import firestore
+from google.api_core import exceptions as api_exceptions
+from google.cloud.firestore import DELETE_FIELD, transactional
 
-from server.store.base import BasePairingStore, PairingRecord, utc_now
+from server.store.base import BasePairingStore, PairingRecord, apply_claim, utc_now
 
 logger = logging.getLogger("notifs.store.firestore")
+
+
+# Firestore TTL policy field (configure a TTL policy on `pairings.purge_at` in the console).
+# Set only while a pairing is unclaimed and removed on claim, so abandoned QR sessions are
+# deleted by Firestore while real pairings never expire. Must be a native Timestamp, which is
+# why it is written separately from the JSON-mode model dump.
+PURGE_AT_FIELD = "purge_at"
 
 
 class FirestorePairingStore(BasePairingStore):
     """Pairing store backed by Google Cloud Firestore."""
 
-    def __init__(self, collection_name: str = "pairings") -> None:
+    def __init__(self, collection_name: str = "pairings", client=None) -> None:
         self.collection_name = collection_name
-        self._db = None
+        # Injectable for tests against the Firestore emulator
+        self._db = client
 
     def _get_db(self):
         if self._db is None:
@@ -49,7 +61,7 @@ class FirestorePairingStore(BasePairingStore):
         def _sync_create():
             db = self._get_db()
             doc_ref = db.collection(self.collection_name).document(pairing_id)
-            doc_ref.set(record.model_dump(mode="json"))
+            doc_ref.set({**record.model_dump(mode="json"), PURGE_AT_FIELD: record.expires_at})
 
         await asyncio.to_thread(_sync_create)
         return record
@@ -94,29 +106,61 @@ class FirestorePairingStore(BasePairingStore):
 
         return await asyncio.to_thread(_sync_get)
 
-    async def claim_pairing(self, code: str, fcm_token: str) -> PairingRecord | None:
+    async def claim_pairing(
+        self,
+        code: str,
+        fcm_token: str,
+        device_secret_hash: str,
+    ) -> PairingRecord | None:
         def _sync_claim():
             db = self._get_db()
             query = (
                 db.collection(self.collection_name)
                 .where("code", "==", code.upper())
                 .limit(1)
-                .get()
             )
 
-            for doc in query:
-                record = PairingRecord.model_validate(doc.to_dict())
-                if record.is_expired or record.claim_attempts >= 5 or record.is_claimed:
-                    doc.reference.update({"claim_attempts": record.claim_attempts + 1})
+            # Resolve target document reference upfront so transaction locks only this
+            # specific document, avoiding collection-wide query contention in emulator.
+            matching_docs = list(query.get())
+            if not matching_docs:
+                return None
+            doc_ref = matching_docs[0].reference
+
+            # Read-check-write inside a transaction so two concurrent claims of the same
+            # code cannot both succeed and the attempt counter cannot lose increments.
+            for outer_attempt in range(5):
+                call_count = 0
+
+                @transactional
+                def _claim_in_txn(txn):
+                    nonlocal call_count
+                    call_count += 1
+                    if call_count > 1:
+                        # Desynchronize retry stampedes under high contention (e.g. in emulator)
+                        time.sleep(random.uniform(0.02, 0.05) * call_count)
+
+                    for doc in txn.get(doc_ref):
+                        if not doc.exists:
+                            return None
+                        record = PairingRecord.model_validate(doc.to_dict())
+                        if not apply_claim(record, fcm_token, device_secret_hash):
+                            txn.update(doc_ref, {"claim_attempts": record.claim_attempts})
+                            return None
+                        txn.update(
+                            doc_ref,
+                            {**record.model_dump(mode="json"), PURGE_AT_FIELD: DELETE_FIELD},
+                        )
+                        return record
                     return None
 
-                record.fcm_token = fcm_token
-                record.is_claimed = True
-                record.claimed_at = utc_now()
-                record.claim_attempts += 1
+                try:
+                    return _claim_in_txn(db.transaction(max_attempts=15))
+                except (ValueError, api_exceptions.Aborted):
+                    if outer_attempt == 4:
+                        raise
+                    time.sleep(random.uniform(0.05, 0.15) * (1.5**outer_attempt))
 
-                doc.reference.update(record.model_dump(mode="json"))
-                return record
             return None
 
         return await asyncio.to_thread(_sync_claim)

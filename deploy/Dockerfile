@@ -42,5 +42,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Launch production server with Uvicorn
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Launch production server with Uvicorn.
+# MUST stay a single worker: download trackers, the push throttler (seq numbers + boot epoch)
+# and rate limiters live in process memory. With N workers each sample lands on a random
+# process, so speed/ETA would be computed from partial history and each worker would emit its
+# own seq stream, which the phone's out-of-order filter would then drop. One async worker
+# handles this workload easily; scale out only after moving that state to a shared store.
+# --forwarded-allow-ips "*" is safe only because compose binds the port to 127.0.0.1 (Nginx).
+CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

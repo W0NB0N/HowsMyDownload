@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.notifs.app.data.AppDownloadItem
 import com.notifs.app.data.DownloadRepository
+import com.notifs.app.data.PairingApi
 import com.notifs.app.data.PairingDataStore
 import com.notifs.app.data.PairingInfo
 import com.notifs.app.service.NotifFcmService
@@ -43,12 +44,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -299,6 +294,14 @@ fun HomeScreen(
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
+                        if (!pairingInfo.hasDeviceSecret) {
+                            Text(
+                                text = "! legacy pairing: unpair and scan a new QR so this phone can refresh its token",
+                                color = StatePaused,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
 
                     Button(
@@ -307,21 +310,16 @@ fun HomeScreen(
                                 val sUrl = pairingInfo.serverUrl
                                 val pId = pairingInfo.pairingId
                                 withContext(Dispatchers.IO) {
-                                    if (!sUrl.isNullOrBlank() && !pId.isNullOrBlank()) {
+                                    val deviceSecret = dataStore.getDeviceSecret()
+                                    if (!sUrl.isNullOrBlank() && !pId.isNullOrBlank() && !deviceSecret.isNullOrBlank()) {
+                                        // Best effort: local state is cleared even if offline
                                         try {
-                                            val client = OkHttpClient.Builder()
-                                                .connectTimeout(3, TimeUnit.SECONDS)
-                                                .build()
-                                            val req = Request.Builder()
-                                                .url("${sUrl.trimEnd('/')}/v1/pairings/$pId")
-                                                .delete()
-                                                .build()
-                                            client.newCall(req).execute()
+                                            PairingApi.unpair(sUrl, pId, deviceSecret)
                                         } catch (_: Exception) {}
                                     }
                                 }
                                 dataStore.clearPairing()
-                                NotifFcmService.resetState()
+                                NotifFcmService.resetState(context)
                                 notificationHelper.cancelAll()
                                 DownloadRepository.clear()
                                 Toast.makeText(context, "Unpaired", Toast.LENGTH_SHORT).show()
@@ -433,46 +431,19 @@ fun HomeScreen(
 
                                         val serverTarget = pairingInfo.serverUrl?.takeIf { it.isNotBlank() } ?: "https://hmd-api.duckdns.org"
                                         val cleanUrl = serverTarget.trim().trimEnd('/')
-                                        val cleanCode = manualCode.trim().uppercase()
-                                        val endpoint = "$cleanUrl/v1/pairings/$cleanCode/claim"
+                                        // Manual codes carry no encryption key (it only travels in the
+                                        // QR), so filenames show as "Encrypted file" on this phone.
+                                        val result = PairingApi.claim(cleanUrl, manualCode, token)
+                                        dataStore.savePairing(
+                                            pairingId = result.pairingId,
+                                            serverUrl = cleanUrl,
+                                            pcName = result.pcName,
+                                            deviceSecret = result.deviceSecret
+                                        )
 
-                                        val client = OkHttpClient.Builder()
-                                            .connectTimeout(5, TimeUnit.SECONDS)
-                                            .readTimeout(5, TimeUnit.SECONDS)
-                                            .build()
-
-                                        val jsonBody = JSONObject().apply {
-                                            put("fcm_token", token)
-                                        }.toString()
-
-                                        val request = Request.Builder()
-                                            .url(endpoint)
-                                            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                                            .build()
-
-                                        val response = client.newCall(request).execute()
-                                        val respBody = response.body?.string() ?: ""
-
-                                        if (response.isSuccessful) {
-                                            val respJson = JSONObject(respBody)
-                                            val pairingId = respJson.optString("pairing_id", "")
-                                            val respPcName = respJson.optString("pc_name", "Desktop-PC")
-
-                                            dataStore.savePairing(
-                                                pairingId = pairingId,
-                                                serverUrl = cleanUrl,
-                                                pcName = respPcName
-                                            )
-
-                                            withContext(Dispatchers.Main) {
-                                                isClaimingManual = false
-                                                Toast.makeText(context, "Pairing Successful!", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            withContext(Dispatchers.Main) {
-                                                manualError = "Claim failed (${response.code})"
-                                                isClaimingManual = false
-                                            }
+                                        withContext(Dispatchers.Main) {
+                                            isClaimingManual = false
+                                            Toast.makeText(context, "Paired (scan the QR to see filenames)", Toast.LENGTH_SHORT).show()
                                         }
                                     } catch (e: Exception) {
                                         withContext(Dispatchers.Main) {

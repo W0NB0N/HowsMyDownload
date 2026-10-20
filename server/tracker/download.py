@@ -58,7 +58,9 @@ class TrackedDownload:
         },
     }
 
-    def __init__(self, initial_item: SourceDownloadItem) -> None:
+    def __init__(self, initial_item: SourceDownloadItem, timestamp: float | None = None) -> None:
+        """`timestamp` is the sample's clock (the source PC's). Speed is computed only from
+        sample timestamps so the PC/server clock offset can never skew deltas."""
         self.id = initial_item.id
         self.filename = initial_item.filename
         self.bytes_downloaded = initial_item.bytes_downloaded
@@ -66,12 +68,14 @@ class TrackedDownload:
         self.state = initial_item.state
         self.mime_type = initial_item.mime_type
 
-        self.created_at = time.time()
+        self.created_at = timestamp if timestamp is not None else time.time()
         self.last_updated_at = self.created_at
+        # Server-side monotonic time of the last sample, used only for idle cleanup
+        self.last_seen = time.monotonic()
         self.smoother = SpeedSmoother()
         self.current_speed = 0
 
-        # Initialize smoother with first point
+        # Initialize smoother with first point (same clock as later updates)
         self.smoother.update(self.created_at, self.bytes_downloaded)
 
     def transition_to(self, new_state: DownloadState) -> None:
@@ -92,6 +96,7 @@ class TrackedDownload:
         """Applies an incoming sample tick to the tracked download."""
         now = timestamp if timestamp is not None else time.time()
         self.last_updated_at = now
+        self.last_seen = time.monotonic()
 
         # Update metadata if refined
         if item.filename and item.filename != self.filename:

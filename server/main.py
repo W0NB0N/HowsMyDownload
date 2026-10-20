@@ -1,56 +1,68 @@
 """FastAPI application entry point for Download Notifs Backend."""
 
+import json
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from server.api.health import router as health_router
 from server.api.pairings import router as pairings_router
 from server.api.samples import router as samples_router
 from server.config import settings
+from server.firebase_app import init_firebase
 from server.notifier.composite import CompositeNotifier
 from server.notifier.console import ConsoleNotifier
 from server.notifier.fcm import FCMNotifier
+from server.store.base import BasePairingStore
+from server.store.cached import CachedPairingStore
 from server.store.firestore import FirestorePairingStore
 from server.store.memory import InMemoryPairingStore
+from server.throttler.push_throttler import PushThrottler
 from server.tracker.manager import TrackerManager
+
+logger = logging.getLogger("notifs.main")
+
+MAX_BODY_BYTES = 50 * 1024
+
+
+def build_pairing_store() -> BasePairingStore:
+    """Creates the configured store. Fails fast rather than silently losing pairings."""
+    store_type = settings.STORE_TYPE.lower()
+    if store_type == "firestore":
+        if not init_firebase(settings.GOOGLE_APPLICATION_CREDENTIALS):
+            raise RuntimeError(
+                "STORE_TYPE=firestore but Firebase could not be initialized. Check "
+                "GOOGLE_APPLICATION_CREDENTIALS, or set STORE_TYPE=memory for local dev."
+            )
+        # Cache auth lookups: otherwise every sample costs a Firestore query
+        return CachedPairingStore(FirestorePairingStore())
+    if store_type == "memory":
+        return InMemoryPairingStore()
+    raise RuntimeError(f"Unsupported STORE_TYPE={settings.STORE_TYPE!r} (use memory|firestore)")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initializes runtime singletons (store, notifier, tracker) on startup."""
-    # 1. Initialize Pairing Store
-    store_type = settings.STORE_TYPE.lower()
-    if store_type == "firestore":
-        try:
-            pairing_store = FirestorePairingStore()
-        except Exception:
-            # Fallback to memory store if firestore unavailable
-            pairing_store = InMemoryPairingStore()
-    else:
-        pairing_store = InMemoryPairingStore()
+    pairing_store = build_pairing_store()
 
-    # 2. Initialize Notifiers
     notifier_type = settings.NOTIFIER_TYPE.lower()
     if notifier_type in ("fcm", "both", "multi"):
         # Dual output: Console logs + FCM push notifications
-        console_notifier = ConsoleNotifier()
         fcm_notifier = FCMNotifier(
             cred_path=settings.GOOGLE_APPLICATION_CREDENTIALS,
             default_token=settings.target_fcm_token,
             store=pairing_store,
         )
-        notifier = CompositeNotifier([console_notifier, fcm_notifier])
+        notifier = CompositeNotifier([ConsoleNotifier(), fcm_notifier])
     else:
-        # Default: Console output only
         notifier = ConsoleNotifier()
 
-    # 3. Rate limiting Throttler & Tracker Manager
-    from server.throttler.push_throttler import PushThrottler
-
+    # The throttler owns seq numbers and the boot epoch; all of this state is in-process,
+    # which is why the server must run as a single worker.
     throttler = PushThrottler(notifier=notifier, min_interval_sec=2.0)
     tracker_manager = TrackerManager(
         notifier=notifier,
@@ -62,36 +74,95 @@ async def lifespan(app: FastAPI):
     app.state.notifier = notifier
     app.state.throttler = throttler
     app.state.tracker_manager = tracker_manager
+    logger.info("Server started: store=%s notifier=%s epoch=%d",
+                type(pairing_store).__name__, notifier_type, throttler.epoch)
 
     yield
 
-    # Cleanup on shutdown
     await tracker_manager.close()
 
-class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):
-    """Enforces maximum payload size limits to protect against DoS and memory exhaustion."""
 
-    def __init__(self, app, max_content_length: int = 50 * 1024) -> None:
-        super().__init__(app)
-        self.max_content_length = max_content_length
+class _BodyTooLarge(Exception):
+    pass
 
-    async def dispatch(self, request, call_next):
-        content_length = request.headers.get("content-length")
-        if content_length:
+
+class BodySizeLimitMiddleware:
+    """Rejects request bodies over `max_bytes` with 413, including chunked uploads.
+
+    Content-Length is checked up front. Bodies without one are buffered up to the limit and
+    replayed to the app, so an oversized chunked stream is cut off before it is parsed.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        content_length = dict(scope["headers"]).get(b"content-length")
+        if content_length is not None:
             try:
-                if int(content_length) > self.max_content_length:
-                    return JSONResponse(
-                        status_code=413,
-                        content={
-                            "detail": (
-                                f"Payload too large. Maximum allowed size is "
-                                f"{self.max_content_length // 1024}KB."
-                            )
-                        },
-                    )
+                too_large = int(content_length) > self.max_bytes
             except ValueError:
-                pass
-        return await call_next(request)
+                too_large = True
+            if too_large:
+                await self._reject(send)
+                return
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            body = await self._read_body(receive)
+        except _BodyTooLarge:
+            await self._reject(send)
+            return
+
+        replayed = False
+
+        async def replay() -> Message:
+            nonlocal replayed
+            if replayed:
+                return await receive()
+            replayed = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+    async def _read_body(self, receive: Receive) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                break
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > self.max_bytes:
+                raise _BodyTooLarge
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        return b"".join(chunks)
+
+    async def _reject(self, send: Send) -> None:
+        body = json.dumps(
+            {"detail": f"Payload too large. Maximum allowed size is {self.max_bytes // 1024}KB."}
+        ).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"connection", b"close"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 def create_app() -> FastAPI:
@@ -103,19 +174,18 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # 1. Payload size guard (max 50KB per request)
-    app.add_middleware(PayloadSizeLimitMiddleware, max_content_length=50 * 1024)
-
-    # 2. Enable CORS for Chrome Extension / local dev
+    # Auth is a bearer header, never a cookie, so credentialed CORS is unnecessary. The
+    # extension itself bypasses CORS via host_permissions.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
     )
+    # Added last so it runs first: oversized bodies are rejected before anything else.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_BODY_BYTES)
 
-    # Register routers
     app.include_router(health_router)
     app.include_router(samples_router)
     app.include_router(pairings_router)

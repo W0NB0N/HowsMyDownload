@@ -38,9 +38,47 @@ jobs:
         run: |
           ruff check .
 
-      - name: Run Pytest Test Suite
+      - name: Run Pytest Test Suite (with coverage)
         run: |
-          pytest --verbose
+          pytest --verbose --cov --cov-report=term
+
+  firestore-emulator:
+    name: Firestore store (emulator)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Set up JDK 17 (Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run store tests against the emulator
+        run: |
+          npx -y firebase-tools@13.35.1 emulators:exec --only firestore --project demo-hmd \
+            --config tools/firestore-emulator/firebase.json \
+            "cd server && pytest tests/test_firestore_emulator.py -o addopts= -v"
 
   android-ci:
     name: Android Client (Kotlin / Compose)
@@ -105,6 +143,6 @@ jobs:
             console.log('✓ manifest.json is valid MV3: ' + manifest.name + ' v' + manifest.version);
           "
 
-      - name: Run Extension Unit Tests (Poller & AES Crypto)
+      - name: Run Extension Unit Tests (Poller, API client & AES Crypto)
         run: |
-          node --test test_poller.js test_crypto.js
+          node --test test_poller.js test_crypto.js test_api.js

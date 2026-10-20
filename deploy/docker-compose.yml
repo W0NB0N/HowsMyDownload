@@ -13,7 +13,6 @@ services:
     environment:
       - STORE_TYPE=${STORE_TYPE:-firestore}
       - NOTIFIER_TYPE=${NOTIFIER_TYPE:-fcm}
-      - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
     volumes:
       # Mount Firebase service account key in read-only mode

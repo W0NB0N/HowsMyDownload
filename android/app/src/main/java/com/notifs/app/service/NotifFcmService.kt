@@ -3,42 +3,30 @@ package com.notifs.app.service
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.notifs.app.data.PairingApi
 import com.notifs.app.data.PairingDataStore
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 
 class NotifFcmService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "NotifFcmService"
-        @Volatile
-        private var lastPairingId: String? = null
+        private const val LATENCY_TAG = "HMD_LATENCY"
+        // Serialize the seq check + save + render so two pushes can never interleave or both
+        // pass the gate (FCM delivers serially today; this keeps it correct if that changes).
+        private val messageMutex = Mutex()
         private val finishedDownloadIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-        @Volatile
-        private var safetyNetJob: Job? = null
 
-        fun resetState() {
-            lastPairingId = null
+        fun resetState(context: android.content.Context) {
             finishedDownloadIds.clear()
-            safetyNetJob?.cancel()
-            safetyNetJob = null
+            StaleWatchdog.disarm(context)
         }
     }
-
-    private val serviceScope = CoroutineScope(Dispatchers.IO)
     private lateinit var notificationHelper: NotificationHelper
     private lateinit var dataStore: PairingDataStore
 
@@ -50,49 +38,28 @@ class NotifFcmService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        Log.i(TAG, "New FCM Token received: $token")
-        serviceScope.launch {
+        Log.i(TAG, "New FCM token received")
+        runBlocking(Dispatchers.IO) {
             dataStore.saveFcmToken(token)
             val pairingInfo = dataStore.getPairingInfo()
             val pairingId = pairingInfo.pairingId
             val serverUrl = pairingInfo.serverUrl
+            val deviceSecret = dataStore.getDeviceSecret()
             if (pairingInfo.isPaired && !pairingId.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
-                sendTokenRefresh(serverUrl, pairingId, token)
-            }
-        }
-    }
-
-    private fun sendTokenRefresh(serverUrl: String, pairingId: String, token: String) {
-        try {
-            val cleanUrl = serverUrl.trimEnd('/')
-            val url = "$cleanUrl/v1/pairings/$pairingId/token"
-            val json = JSONObject().apply {
-                put("fcm_token", token)
-            }
-            val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(url)
-                .post(body)
-                .build()
-
-            val client = OkHttpClient()
-            client.newCall(request).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
+                if (deviceSecret.isNullOrBlank()) {
+                    Log.w(TAG, "Paired without a device secret (pre-upgrade pairing); re-pair to sync token")
+                    return@runBlocking
+                }
+                try {
+                    when (val code = PairingApi.refreshToken(serverUrl, pairingId, deviceSecret, token)) {
+                        200 -> Log.i(TAG, "Refreshed FCM token on server for pairing: $pairingId")
+                        401 -> Log.w(TAG, "Server rejected device secret (pairing gone); token not updated")
+                        else -> Log.w(TAG, "Server rejected token refresh: HTTP $code")
+                    }
+                } catch (e: Exception) {
                     Log.e(TAG, "Failed to refresh token on server: ${e.message}")
                 }
-
-                override fun onResponse(call: Call, response: Response) {
-                    response.use {
-                        if (response.isSuccessful) {
-                            Log.i(TAG, "Successfully refreshed FCM token on server for pairing: $pairingId")
-                        } else {
-                            Log.w(TAG, "Server rejected token refresh: HTTP ${response.code}")
-                        }
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initiating token refresh call", e)
+            }
         }
     }
 
@@ -105,47 +72,53 @@ class NotifFcmService : FirebaseMessagingService() {
             return
         }
 
-        Log.d(TAG, "FCM data payload: $data")
 
         // Check for server-initiated or extension-initiated unpair event
         if (data["event"] == "unpaired") {
             val unpairId = data["pairing_id"] ?: ""
-            Log.i(TAG, "Unpair event received via FCM for pairing_id='$unpairId'. Clearing pairing state.")
-            serviceScope.launch {
+            runBlocking(Dispatchers.IO) {
+                val currentId = dataStore.getPairingInfo().pairingId
+                if (!currentId.isNullOrBlank() && unpairId != currentId) {
+                    // A late unpair for a previous pairing must not tear down the current one
+                    Log.w(TAG, "Ignoring unpair event for '$unpairId' (current pairing is '$currentId')")
+                    return@runBlocking
+                }
+                Log.i(TAG, "Unpair event received via FCM for pairing_id='$unpairId'. Clearing pairing state.")
                 dataStore.clearPairing()
-                resetState()
+                resetState(applicationContext)
                 notificationHelper.cancelAll()
             }
             return
         }
 
-        val seqStr = data["seq"] ?: "0"
-        val seq = seqStr.toIntOrNull() ?: 0
+        val seq = data["seq"]?.toIntOrNull() ?: 0
+        val epoch = data["epoch"]?.toLongOrNull() ?: 0L
+        // >0 when the server trimmed the list to fit FCM's 4KB limit
+        val omitted = data["omitted"]?.toIntOrNull() ?: 0
         val pairingId = data["pairing_id"] ?: ""
         val source = data["source"] ?: "Chrome"
         val pcName = data["pc_name"] ?: "Desktop-PC"
         val downloadsJsonStr = data["downloads"] ?: "[]"
 
-        serviceScope.launch {
-            val lastStoredSeq = dataStore.getLastSeq()
+        // Runs on FCM's worker thread; FCM keeps the service alive until this returns.
+        runBlocking(Dispatchers.IO) { messageMutex.withLock {
             val hideFilenames = dataStore.getHideFilenames()
+            val incoming = StreamPosition(epoch = epoch, seq = seq)
+            val last = dataStore.getStreamPosition()
 
-            // 1. If pairing_id changed, reset sequence and finished download cache immediately
-            if (pairingId.isNotBlank() && pairingId != lastPairingId) {
-                Log.i(TAG, "New pairing stream detected (old='$lastPairingId', new='$pairingId'). Resetting sequence tracking.")
-                lastPairingId = pairingId
-                dataStore.saveLastSeq(seq)
-                finishedDownloadIds.clear()
-            } else {
-                // Drop duplicate and out-of-order pushes (seq <= lastSeq)
-                if (seq > 0 && lastStoredSeq > 0 && seq <= lastStoredSeq) {
-                    Log.d(TAG, "Dropping duplicate or out-of-order message: seq=$seq <= lastSeq=$lastStoredSeq")
-                    return@launch
+            when (val decision = SequenceGate.evaluate(dataStore.getPairingInfo().pairingId, pairingId, last, incoming)) {
+                is SequenceGate.Decision.Drop -> {
+                    Log.d(TAG, "Dropping push: ${decision.reason}")
+                    return@withLock
                 }
-                if (seq > 0) {
-                    dataStore.saveLastSeq(seq)
+                SequenceGate.Decision.Accept -> {
+                    if (last != null && last.epoch != incoming.epoch) {
+                        Log.i(TAG, "Server restarted (epoch ${last.epoch} -> ${incoming.epoch}); new seq stream")
+                    }
+                    if (seq > 0) dataStore.saveStreamPosition(incoming)
                 }
             }
+            logDeliveryLatency(seq, data["sent_at"])
 
             try {
                 val encKey = dataStore.getEncryptionKey()
@@ -260,9 +233,14 @@ class NotifFcmService : FirebaseMessagingService() {
                     }
                 }
 
-                // Clean up any progress notifications that are no longer active
-                val currentActiveIds = activeCandidates.map { it.id }.toSet()
-                notificationHelper.cleanRemovedProgressNotifications(currentActiveIds)
+                // Clean up any progress notifications that are no longer active. Skipped when the
+                // server trimmed the payload: absent downloads may still be running.
+                if (omitted == 0) {
+                    val currentActiveIds = activeCandidates.map { it.id }.toSet()
+                    notificationHelper.cleanRemovedProgressNotifications(currentActiveIds)
+                } else {
+                    Log.w(TAG, "Server omitted $omitted downloads to fit the FCM size limit")
+                }
 
                 // Calculate total remaining bytes across active downloads
                 var totalRemainingBytes: Long = 0L
@@ -306,26 +284,38 @@ class NotifFcmService : FirebaseMessagingService() {
                     )
                 }
 
-                // 90-second local safety net watchdog: only arm if transfers are ACTIVELY downloading (not paused)
+                // "PC offline" watchdog: armed only while bytes are actually moving (a paused
+                // download legitimately sends nothing). Survives process death; see StaleWatchdog.
                 val hasActivelyTransferring = activeCandidates.any { it.state == "downloading" || it.state == "starting" }
                 if (hasActivelyTransferring) {
-                    safetyNetJob?.cancel()
-                    safetyNetJob = serviceScope.launch {
-                        delay(90_000L)
-                        Log.w(TAG, "Local safety net triggered: 90s elapsed without FCM updates while transfers active")
-                        notificationHelper.showStaleNotification(source = source, pcName = pcName)
-                    }
+                    notificationHelper.cancelStaleNotification() // PC is back
+                    StaleWatchdog.arm(applicationContext, source, pcName)
                 } else {
-                    safetyNetJob?.cancel()
-                    safetyNetJob = null
+                    StaleWatchdog.disarm(applicationContext)
                 }
 
                 // Update active downloads for UI
                 com.notifs.app.data.DownloadRepository.updateDownloads(uiDownloads)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error parsing downloads JSON array: $downloadsJsonStr", e)
+                // Never log the payload: it carries (encrypted) filenames and pairing metadata
+                Log.e(TAG, "Error processing downloads payload (seq=$seq)", e)
             }
+        } }
+    }
+
+    /**
+     * Logs server-dispatch -> phone-receipt latency for docs/metrics.md (parsed by
+     * tools/latency_report.py from `adb logcat -s HMD_LATENCY`). Both clocks are NTP-synced,
+     * so the error is typically a few tens of ms.
+     */
+    private fun logDeliveryLatency(seq: Int, sentAt: String?) {
+        if (sentAt.isNullOrBlank()) return
+        try {
+            val sentMs = java.time.OffsetDateTime.parse(sentAt).toInstant().toEpochMilli()
+            Log.i(LATENCY_TAG, "seq=$seq latency_ms=${System.currentTimeMillis() - sentMs}")
+        } catch (_: Exception) {
+            // Malformed timestamp: metrics only, never fatal
         }
     }
 }

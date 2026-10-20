@@ -159,3 +159,43 @@ async def test_throttler_multi_pairing_isolation(mock_notifier: MockNotifier):
     assert mock_notifier.dispatched[1].seq == 1
 
     await throttler.close()
+
+
+@pytest.mark.asyncio
+async def test_throttler_stamps_boot_epoch(mock_notifier: MockNotifier):
+    """seq restarts with each process, so every push carries the instance's epoch."""
+    old = PushThrottler(notifier=mock_notifier, epoch=1_000)
+    new = PushThrottler(notifier=mock_notifier, epoch=2_000)
+
+    await old.submit(make_payload("pair-e", [("d1", DownloadState.STARTING, 0)]))
+    await new.submit(make_payload("pair-e", [("d1", DownloadState.STARTING, 0)]))
+
+    first, second = mock_notifier.dispatched
+    assert (first.epoch, first.seq) == (1_000, 1)
+    # A restarted server reuses seq=1 but is distinguishable (and newer) via epoch
+    assert (second.epoch, second.seq) == (2_000, 1)
+    assert (second.epoch, second.seq) > (first.epoch, first.seq)
+
+
+@pytest.mark.asyncio
+async def test_throttler_default_epoch_is_boot_time_ms(mock_notifier: MockNotifier):
+    import time
+
+    before = int(time.time() * 1000)
+    throttler = PushThrottler(notifier=mock_notifier)
+    assert before <= throttler.epoch <= int(time.time() * 1000)
+
+
+@pytest.mark.asyncio
+async def test_throttler_forget_clears_pairing_state(mock_notifier: MockNotifier):
+    throttler = PushThrottler(notifier=mock_notifier, min_interval_sec=10.0)
+    await throttler.submit(make_payload("pair-f", [("d1", DownloadState.STARTING, 0)]))
+    # Queue a throttled update that would otherwise flush later
+    await throttler.submit(make_payload("pair-f", [("d1", DownloadState.STARTING, 10)]))
+    assert throttler.get_seq("pair-f") == 1
+
+    await throttler.forget("pair-f")
+
+    assert throttler.get_seq("pair-f") == 0
+    assert "pair-f" not in throttler._pending_payloads
+    assert "pair-f" not in throttler._flush_tasks

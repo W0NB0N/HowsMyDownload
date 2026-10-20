@@ -9,7 +9,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.notifs.app.MainActivity
 import com.notifs.app.R
-import java.util.Collections
 import java.util.Locale
 
 class NotificationHelper(private val context: Context) {
@@ -23,13 +22,28 @@ class NotificationHelper(private val context: Context) {
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
 
         private const val BRAND_COLOR = 0xFF8A05FF.toInt()
+
+        /**
+         * OS-enforced backstop: a progress bar not refreshed within this window is removed by
+         * the system even if this process is dead. Longer than the 90s watchdog so the
+         * "PC offline" alert normally fires first.
+         */
+        const val PROGRESS_TIMEOUT_MS = 150_000L
+        private const val STALE_NOTIFICATION_ID = 9999
     }
 
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    // Thread-safe set of currently displayed progress notification IDs
-    private val activeProgressNotifIds = Collections.synchronizedSet(mutableSetOf<Int>())
+    /**
+     * IDs of progress notifications currently in the shade, asked from the system rather than
+     * kept in memory: an in-memory set was empty after process death, so "cancel all progress"
+     * silently missed every bar posted by the previous process.
+     */
+    private fun activeProgressIds(): List<Int> =
+        notificationManager.activeNotifications
+            .filter { it.notification.channelId == CHANNEL_DOWNLOADS && it.id != SUMMARY_ID }
+            .map { it.id }
 
     init {
         createChannels()
@@ -91,7 +105,6 @@ class NotificationHelper(private val context: Context) {
         state: String = "downloading"
     ) {
         val notifId = getNotificationId(downloadId)
-        activeProgressNotifIds.add(notifId)
 
         val isIndeterminate = (percentage == null)
         val pctInt = percentage?.toInt() ?: 0
@@ -151,6 +164,7 @@ class NotificationHelper(private val context: Context) {
             .setGroup(GROUP_DOWNLOADS)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             .setProgress(100, pctInt, isIndeterminate)
+            .setTimeoutAfter(PROGRESS_TIMEOUT_MS)
             .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
 
         notificationManager.notify(notifId, builder.build())
@@ -165,7 +179,6 @@ class NotificationHelper(private val context: Context) {
         hideFilenames: Boolean = false
     ) {
         val notifId = getNotificationId(downloadId)
-        activeProgressNotifIds.remove(notifId)
 
         // Cancel the ongoing progress notification
         notificationManager.cancel(notifId)
@@ -202,7 +215,7 @@ class NotificationHelper(private val context: Context) {
 
     fun showStaleNotification(source: String = "Chrome", pcName: String = "Desktop-PC") {
         cancelActiveProgressNotifications()
-        val notifId = 9999
+        val notifId = STALE_NOTIFICATION_ID
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -219,35 +232,31 @@ class NotificationHelper(private val context: Context) {
     }
 
     fun cancelActiveProgressNotifications() {
-        synchronized(activeProgressNotifIds) {
-            for (id in activeProgressNotifIds) {
-                notificationManager.cancel(id)
-            }
-            activeProgressNotifIds.clear()
+        for (id in activeProgressIds()) {
+            notificationManager.cancel(id)
         }
         notificationManager.cancel(SUMMARY_ID)
     }
 
+    fun cancelStaleNotification() {
+        notificationManager.cancel(STALE_NOTIFICATION_ID)
+    }
+
     fun cancelNotification(downloadId: String) {
-        val notifId = getNotificationId(downloadId)
-        activeProgressNotifIds.remove(notifId)
-        notificationManager.cancel(notifId)
+        notificationManager.cancel(getNotificationId(downloadId))
     }
 
     fun cleanRemovedProgressNotifications(currentActiveIds: Set<String>) {
         val currentNotifIds = currentActiveIds.map { getNotificationId(it) }.toSet()
-        val toRemove = synchronized(activeProgressNotifIds) {
-            activeProgressNotifIds.filter { it !in currentNotifIds && it != SUMMARY_ID }
-        }
-        for (id in toRemove) {
-            notificationManager.cancel(id)
-            activeProgressNotifIds.remove(id)
+        for (id in activeProgressIds()) {
+            if (id !in currentNotifIds) {
+                notificationManager.cancel(id)
+            }
         }
     }
 
     fun cancelAll() {
         notificationManager.cancelAll()
-        activeProgressNotifIds.clear()
     }
 
     fun cancelGroupSummary() {
@@ -306,6 +315,7 @@ class NotificationHelper(private val context: Context) {
             .setSubText(subText)
             .setStyle(inboxStyle)
             .setContentIntent(pendingOpenIntent)
+            .setTimeoutAfter(PROGRESS_TIMEOUT_MS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

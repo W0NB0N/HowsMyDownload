@@ -34,6 +34,8 @@ def test_claim_pairing_success(client: TestClient):
     assert claim_data["status"] == "ok"
     assert claim_data["pairing_id"] == pairing_data["pairing_id"]
     assert claim_data["pc_name"] == "Laptop-Work"
+    assert len(claim_data["device_secret"]) >= 32
+    assert claim_data["device_secret"] != pairing_data["secret"]
 
     # Verify status via GET with Bearer token
     status_resp = client.get(
@@ -72,7 +74,7 @@ async def test_claim_expired_code_fails(pairing_store: InMemoryPairingStore):
         expires_in_sec=-10,  # Already expired
     )
 
-    claimed = await pairing_store.claim_pairing(code, "token_xyz")
+    claimed = await pairing_store.claim_pairing(code, "token_xyz", hash_secret("device"))
     assert claimed is None
 
 
@@ -90,7 +92,7 @@ async def test_claim_max_attempts_exceeded(pairing_store: InMemoryPairingStore):
     )
     record.claim_attempts = 5
 
-    claimed = await pairing_store.claim_pairing(code, "token_xyz")
+    claimed = await pairing_store.claim_pairing(code, "token_xyz", hash_secret("device"))
     assert claimed is None
 
 

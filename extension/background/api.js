@@ -4,7 +4,7 @@
  * and managing local sample history.
  */
 
-import { encryptFilename } from "./crypto.js";
+import { encryptField, isValidKeyHex, truncateFilename } from "./crypto.js";
 
 const MAX_HISTORY = 100;
 const BACKOFF_STEPS = [2000, 4000, 8000, 16000, 30000];
@@ -67,6 +67,28 @@ export async function checkServerHealth(serverUrl) {
   } catch (err) {
     return { online: false, error: err.message || "Connection refused", connectionState: currentConnectionState };
   }
+}
+
+/**
+ * Builds the body sent to the server: a deep copy of the sample with every user-content field
+ * (filename, mime_type) encrypted. Throws rather than ever returning plaintext.
+ *
+ * @param {Object} sample - SamplePayload with plaintext filenames (kept locally for the popup)
+ * @param {string} encryptionKey - 64-char hex AES-256 key shared with the phone via QR
+ * @returns {Promise<Object>}
+ */
+export async function prepareWirePayload(sample, encryptionKey) {
+  if (!isValidKeyHex(encryptionKey)) {
+    throw new Error("Missing encryption key. Re-pair the phone to enable end-to-end encryption.");
+  }
+  const payload = JSON.parse(JSON.stringify(sample));
+  for (const dl of payload.downloads || []) {
+    dl.filename = await encryptField(truncateFilename(dl.filename || `download-${dl.id}`), encryptionKey);
+    if (dl.mime_type) {
+      dl.mime_type = await encryptField(dl.mime_type, encryptionKey);
+    }
+  }
+  return payload;
 }
 
 /**
@@ -160,14 +182,24 @@ export async function sendSample(sample) {
     return;
   }
 
-  // Prepare payload for server transmission (encrypt filenames with client-side key)
-  const payloadToSend = JSON.parse(JSON.stringify(sample));
-  if (encryptionKey && Array.isArray(payloadToSend.downloads)) {
-    for (const dl of payloadToSend.downloads) {
-      if (dl.filename) {
-        dl.filename = await encryptFilename(dl.filename, encryptionKey);
-      }
-    }
+  // Encrypt user-content fields with the client-side key. Fail closed: if encryption is not
+  // possible the sample is dropped, never sent in plaintext.
+  let payloadToSend;
+  try {
+    payloadToSend = await prepareWirePayload(sample, encryptionKey);
+  } catch (cryptoErr) {
+    console.error("[How's My Download] Sample not sent:", cryptoErr.message);
+    try {
+      await chrome.storage.local.set({ lastServerError: cryptoErr.message });
+      chrome.runtime.sendMessage({
+        type: "SAMPLE_DISPATCHED",
+        payload: sample,
+        connectionState: currentConnectionState,
+        error: cryptoErr.message,
+        isPaired: true
+      }).catch(() => {});
+    } catch {}
+    return;
   }
 
   // Build headers
@@ -203,7 +235,16 @@ export async function sendSample(sample) {
       const timestamp = new Date(sample.timestamp).toLocaleTimeString();
       console.log(`[How's My Download] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
     } else {
-      if (res.status === 401) {
+      const { pairingSecret: currentSecret } = await chrome.storage.local.get({ pairingSecret: null });
+      if (res.status === 401 && currentSecret && currentSecret !== pairingSecret) {
+        // The secret was rotated while this request was in flight: not a revocation.
+        console.log("[How's My Download] 401 with a superseded secret; retrying with the rotated one.");
+        serverOnline = true;
+        pendingRetrySample = sample;
+        if (!retryTimerId) {
+          retryTimerId = setTimeout(executeRetryPendingSample, 50);
+        }
+      } else if (res.status === 401) {
         console.warn("[How's My Download] Server returned 401 (Pairing revoked). Resetting pairing status.");
         serverOnline = true;
         currentConnectionState = "connected";
@@ -214,6 +255,7 @@ export async function sendSample(sample) {
           pairingId: null,
           pairingSecret: null,
           pairingCode: null,
+          encryptionKey: null,
           serverOnline: true,
           connectionState: "connected",
           lastServerError: null
