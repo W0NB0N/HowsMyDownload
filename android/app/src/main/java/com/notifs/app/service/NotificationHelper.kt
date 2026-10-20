@@ -238,9 +238,6 @@ class NotificationHelper(private val context: Context) {
         notificationManager.cancel(SUMMARY_ID)
     }
 
-    /** True if any download progress bar is currently shown. */
-    fun hasActiveProgress(): Boolean = activeProgressIds().isNotEmpty()
-
     fun cancelStaleNotification() {
         notificationManager.cancel(STALE_NOTIFICATION_ID)
     }

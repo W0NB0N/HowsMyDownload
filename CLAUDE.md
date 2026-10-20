@@ -66,13 +66,14 @@ CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore
 
 ## Known gaps / gotchas (verified in code, Oct 2026)
 
+- `STORE_TYPE=memory` loses pairings on restart (extension gets 401 and unpairs). To test restart continuity locally, use `STORE_TYPE=firestore`.
 - Tracker, throttler `seq`/`epoch`, rate limiters, and the auth cache are in-process memory: the server **must** run one Uvicorn worker (Dockerfile pins `--workers 1`).
 - Speed uses only sample (PC-clock) timestamps; idle cleanup uses the server's `time.monotonic()`. Don't mix the two clocks.
 - An illegal state transition from the source resets the tracked download instead of raising (the extension would otherwise retry a 500 forever).
 - The Firestore TTL policy on `pairings.purge_at` must be enabled in the console (deploy guide step 6.4).
 - Pairings made before device secrets existed cannot refresh their FCM token or unpair from the phone; the app shows a re-pair warning.
 - Android secrets (filename key, device secret) are AES-GCM wrapped with the AndroidKeyStore key `hmd_datastore_v1` (`util/SecretCipher.kt`); plaintext values from older builds migrate on first read.
-- "PC offline" is an `AlarmManager` alarm (`service/StaleWatchdog.kt`), not a coroutine; progress notifications also use `setTimeoutAfter`. Notification IDs come from `NotificationManager.activeNotifications`, not memory.
+- "PC offline" is an `AlarmManager` alarm (`service/StaleWatchdog.kt`), not a coroutine: exact when `SCHEDULE_EXACT_ALARM` is granted, else inexact and possibly minutes late. Being armed is the signal; it must not check for visible bars, because `setTimeoutAfter` (150s) may already have removed them. Notification IDs come from `NotificationManager.activeNotifications`, not memory.
 - FCM handlers use `runBlocking` on FCM's worker thread on purpose (work must finish before the service is torn down).
 - Cleartext HTTP and user CAs are allowed only in debug builds (`app/src/debug/res/xml/network_security_config.xml`); release is HTTPS + system CAs.
 - Phone latency and battery figures haven't been measured yet; `docs/metrics.md` says how. Don't put unmeasured numbers in docs.

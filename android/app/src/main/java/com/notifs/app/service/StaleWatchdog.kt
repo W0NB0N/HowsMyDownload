@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.notifs.app.data.DownloadRepository
@@ -16,9 +17,13 @@ import com.notifs.app.data.DownloadRepository
  *
  * This used to be a coroutine in the FCM service's scope, which dies with the process. That's
  * exactly what Android does to an idle background app, so the alert often never fired. An
- * AlarmManager alarm survives process death. It is deliberately inexact (no exact-alarm
- * permission); Doze may defer it, and NotificationHelper.PROGRESS_TIMEOUT_MS is the
- * OS-enforced backstop that removes the stale bar regardless.
+ * AlarmManager alarm survives process death.
+ *
+ * The alarm is exact where Android allows it (always below 12; with SCHEDULE_EXACT_ALARM,
+ * pre-granted on 12-13, user-granted on 14+). Otherwise it is inexact and may fire minutes
+ * late, after NotificationHelper.PROGRESS_TIMEOUT_MS has already removed the bars. So firing
+ * must not depend on bars still being shown: being armed is the signal, because the alarm
+ * is only armed while a transfer is active and disarmed on pause, finish or unpair.
  */
 object StaleWatchdog {
     const val TIMEOUT_MS = 90_000L
@@ -40,7 +45,13 @@ object StaleWatchdog {
     fun arm(context: Context, source: String, pcName: String) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val pi = pendingIntent(context, source, pcName, PendingIntent.FLAG_UPDATE_CURRENT) ?: return
-        alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + TIMEOUT_MS, pi)
+        val triggerAt = SystemClock.elapsedRealtime() + TIMEOUT_MS
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        if (canExact) {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+        } else {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+        }
     }
 
     /** Stops the countdown (nothing active, paused, finished, or unpaired). */
@@ -53,10 +64,6 @@ object StaleWatchdog {
 
     internal fun onFired(context: Context, intent: Intent) {
         val helper = NotificationHelper(context)
-        if (!helper.hasActiveProgress()) {
-            Log.d(TAG, "Watchdog fired with no active progress bars; nothing to do")
-            return
-        }
         Log.w(TAG, "No FCM update for ${TIMEOUT_MS / 1000}s while transfers active: PC offline")
         helper.showStaleNotification(
             source = intent.getStringExtra(EXTRA_SOURCE) ?: "Chrome",
