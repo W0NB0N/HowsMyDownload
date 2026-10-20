@@ -13,8 +13,8 @@ Metadata, descriptions, and policy disclosures for publishing **How's My Downloa
 | **Version** | `0.1.0` |
 | **Category** | Productivity / Developer Tools |
 | **Summary (132 chars max)** | Mirror live PC download progress, ETA, and speeds to your phone in real time with zero-knowledge end-to-end encryption. |
-| **Website** | `https://github.com/1shav/hows-my-download` |
-| **Support URL** | `https://github.com/1shav/hows-my-download/issues` |
+| **Website** | `https://github.com/W0NB0N/How-sMyDownload` |
+| **Support URL** | `https://github.com/W0NB0N/How-sMyDownload/issues` |
 
 ---
 

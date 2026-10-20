@@ -10,16 +10,16 @@ Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipp
 | Path | What |
 |---|---|
 | `server/` | FastAPI app. Package is `server` (pyproject maps `server` → `.`), so imports are `from server.x import y` and must be run with the repo root on `PYTHONPATH`. |
-| `server/main.py` | App factory + `lifespan` that wires store, notifier, throttler, tracker into `app.state`. Payload-size middleware (Content-Length only). |
+| `server/main.py` | App factory + `lifespan` that wires store, notifier, throttler, tracker into `app.state`. `BodySizeLimitMiddleware` (50 KB, also for chunked bodies). Firestore store is wrapped in `CachedPairingStore`. |
 | `server/api/` | `samples.py` (ingest), `pairings.py` (create/claim/status/delete/token refresh/rotate-secret), `health.py` |
 | `server/tracker/` | `download.py` per-download state machine, `calculator.py` EMA speed/ETA, `manager.py` keyed by `(pairing_id, download_id)` |
-| `server/throttler/push_throttler.py` | 2s per-pairing coalescing, state-change bypass, owns the `seq` counter |
+| `server/throttler/push_throttler.py` | 2s per-pairing coalescing, state-change bypass, owns `seq` + `epoch`. State under `_lock`; sends outside it under a per-pairing FIFO send lock |
 | `server/notifier/` | `BaseNotifier`, `console`, `fcm`, `composite` (console+fcm). No LAN notifier. |
-| `server/store/` | `BasePairingStore`, `memory`, `firestore` (sync client wrapped in `asyncio.to_thread`). `SQLITE_PATH` in config is unused — no sqlite store exists. |
+| `server/store/` | `BasePairingStore` + shared `apply_claim`, `memory`, `firestore` (sync client in `asyncio.to_thread`, transactional claim, `purge_at` TTL field on unclaimed docs, injectable client), `cached` (30s read-through cache; writes invalidate before and after) |
 | `extension/` | MV3, plain ES modules, no build step, no deps. `background/{service-worker,poller,api,crypto}.js`, `popup/` (incl. vendored `qrcode.js`). |
 | `android/` | Kotlin + Compose, single module `app`, package `com.notifs.app`. Most UI lives in `MainActivity.kt` (~900 lines). |
 | `deploy/` | Dockerfile, docker-compose, nginx.conf, systemd unit, `oracle-setup.sh`, Firestore rules |
-| `tools/` | `sample_replay.py` (+ `sample_traces/`), `fcm_test_sender.py`, `package_extension.py` (→ `dist/`), icon scripts |
+| `tools/` | `sample_replay.py` (+ `sample_traces/`), `fcm_test_sender.py`, `package_extension.py` (→ `dist/`), `bench_server.py`, `latency_report.py` (parses `HMD_LATENCY` logcat), `firestore-emulator/firebase.json`, icon scripts |
 | `docs/` | `protocol.md` (schema v1), `ADR-0001-architecture.md`, `metrics.md`, `store-listing.md` |
 
 ## Commands
@@ -27,7 +27,12 @@ Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipp
 ```bash
 # Server (from repo root; venv at .venv)
 pip install -e "./server[dev]"
-cd server && ruff check . && pytest            # pytest config sets pythonpath=".."
+cd server && ruff check . && pytest --cov     # pytest config sets pythonpath=".."
+
+# Firestore store against the emulator (Java 11+; firebase-tools 13.29.x is broken, use 13.35.1)
+npx -y firebase-tools@13.35.1 emulators:exec --only firestore --project demo-hmd \
+  --config tools/firestore-emulator/firebase.json "cd server && pytest tests/test_firestore_emulator.py -o addopts="
+# On Windows the emulator's java process outlives the command: stop whatever holds port 8085.
 uvicorn server.main:app --reload --port 8000    # from repo root; NOTIFIER_TYPE=console, STORE_TYPE=memory by default
 
 # Replay a recorded trace against a local server
@@ -43,7 +48,7 @@ cd android && ./gradlew testDebugUnitTest assembleDebug
 python tools/package_extension.py
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly the three blocks above on push/PR to master.
+CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore emulator suite, Android and extension tests on push/PR to master.
 
 ## Config (env vars, `server/config.py`)
 
@@ -61,13 +66,16 @@ CI (`.github/workflows/ci.yml`) runs exactly the three blocks above on push/PR t
 
 ## Known gaps / gotchas (verified in code, Oct 2026)
 
-- Tracker, throttler `seq`/`epoch`, and rate limiters are in-process memory: the server **must** run one Uvicorn worker (Dockerfile pins `--workers 1`).
-- The throttler holds its lock while awaiting the FCM send, so one slow send delays every pairing.
-- Auth does a Firestore query per sample (no cache). The Firestore transactional claim path has no automated test (needs the emulator).
-- Pairings made before device secrets existed cannot refresh their FCM token or unpair from the phone; re-pair.
-- Android: the enc key and device secret are in Preferences DataStore (app-private, backup disabled) but not Keystore-wrapped. The 90s "PC offline" safety net is a coroutine in the FCM service scope, which can die with the process (`setTimeoutAfter` would be sturdier).
+- Tracker, throttler `seq`/`epoch`, rate limiters, and the auth cache are in-process memory: the server **must** run one Uvicorn worker (Dockerfile pins `--workers 1`).
+- Speed uses only sample (PC-clock) timestamps; idle cleanup uses the server's `time.monotonic()`. Don't mix the two clocks.
+- An illegal state transition from the source resets the tracked download instead of raising (the extension would otherwise retry a 500 forever).
+- The Firestore TTL policy on `pairings.purge_at` must be enabled in the console (deploy guide step 6.4).
+- Pairings made before device secrets existed cannot refresh their FCM token or unpair from the phone; the app shows a re-pair warning.
+- Android secrets (filename key, device secret) are AES-GCM wrapped with the AndroidKeyStore key `hmd_datastore_v1` (`util/SecretCipher.kt`); plaintext values from older builds migrate on first read.
+- "PC offline" is an `AlarmManager` alarm (`service/StaleWatchdog.kt`), not a coroutine; progress notifications also use `setTimeoutAfter`. Notification IDs come from `NotificationManager.activeNotifications`, not memory.
+- FCM handlers use `runBlocking` on FCM's worker thread on purpose (work must finish before the service is torn down).
 - Cleartext HTTP and user CAs are allowed only in debug builds (`app/src/debug/res/xml/network_security_config.xml`); release is HTTPS + system CAs.
-- README/metrics claims the code does not back up: "100% coverage" (no coverage tooling), the numbers in `docs/metrics.md` (no instrumentation in the repo produces them), MIT license (no LICENSE file). README repo links point to `1shav/hows-my-download`; the real remote is `W0NB0N/How-sMyDownload`.
+- Phone latency and battery figures haven't been measured yet; `docs/metrics.md` says how. Don't put unmeasured numbers in docs.
 
 ## Conventions
 
