@@ -294,6 +294,14 @@ fun HomeScreen(
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
+                        if (!pairingInfo.hasDeviceSecret) {
+                            Text(
+                                text = "! legacy pairing: unpair and scan a new QR so this phone can refresh its token",
+                                color = StatePaused,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
 
                     Button(
@@ -311,7 +319,7 @@ fun HomeScreen(
                                     }
                                 }
                                 dataStore.clearPairing()
-                                NotifFcmService.resetState()
+                                NotifFcmService.resetState(context)
                                 notificationHelper.cancelAll()
                                 DownloadRepository.clear()
                                 Toast.makeText(context, "Unpaired", Toast.LENGTH_SHORT).show()
