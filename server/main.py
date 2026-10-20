@@ -17,6 +17,7 @@ from server.notifier.composite import CompositeNotifier
 from server.notifier.console import ConsoleNotifier
 from server.notifier.fcm import FCMNotifier
 from server.store.base import BasePairingStore
+from server.store.cached import CachedPairingStore
 from server.store.firestore import FirestorePairingStore
 from server.store.memory import InMemoryPairingStore
 from server.throttler.push_throttler import PushThrottler
@@ -36,7 +37,8 @@ def build_pairing_store() -> BasePairingStore:
                 "STORE_TYPE=firestore but Firebase could not be initialized. Check "
                 "GOOGLE_APPLICATION_CREDENTIALS, or set STORE_TYPE=memory for local dev."
             )
-        return FirestorePairingStore()
+        # Cache auth lookups: otherwise every sample costs a Firestore query
+        return CachedPairingStore(FirestorePairingStore())
     if store_type == "memory":
         return InMemoryPairingStore()
     raise RuntimeError(f"Unsupported STORE_TYPE={settings.STORE_TYPE!r} (use memory|firestore)")

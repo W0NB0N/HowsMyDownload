@@ -3,7 +3,7 @@
 import asyncio
 from datetime import timedelta
 
-from server.store.base import MAX_CLAIM_ATTEMPTS, BasePairingStore, PairingRecord, utc_now
+from server.store.base import BasePairingStore, PairingRecord, apply_claim, utc_now
 
 
 class InMemoryPairingStore(BasePairingStore):
@@ -84,18 +84,8 @@ class InMemoryPairingStore(BasePairingStore):
             if record is None:
                 return None
 
-            record.claim_attempts += 1
-            if (
-                record.is_expired
-                or record.is_claimed
-                or record.claim_attempts > MAX_CLAIM_ATTEMPTS
-            ):
+            if not apply_claim(record, fcm_token, device_secret_hash):
                 return None
-
-            record.fcm_token = fcm_token
-            record.device_secret_hash = device_secret_hash
-            record.is_claimed = True
-            record.claimed_at = utc_now()
             return record
 
     async def delete_pairing(self, pairing_id: str) -> bool:

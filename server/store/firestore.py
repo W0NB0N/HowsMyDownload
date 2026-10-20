@@ -6,19 +6,27 @@ from datetime import timedelta
 
 import firebase_admin
 from firebase_admin import firestore
-from google.cloud.firestore import transactional
+from google.cloud.firestore import DELETE_FIELD, transactional
 
-from server.store.base import MAX_CLAIM_ATTEMPTS, BasePairingStore, PairingRecord, utc_now
+from server.store.base import BasePairingStore, PairingRecord, apply_claim, utc_now
 
 logger = logging.getLogger("notifs.store.firestore")
+
+
+# Firestore TTL policy field (configure a TTL policy on `pairings.purge_at` in the console).
+# Set only while a pairing is unclaimed and removed on claim, so abandoned QR sessions are
+# deleted by Firestore while real pairings never expire. Must be a native Timestamp, which is
+# why it is written separately from the JSON-mode model dump.
+PURGE_AT_FIELD = "purge_at"
 
 
 class FirestorePairingStore(BasePairingStore):
     """Pairing store backed by Google Cloud Firestore."""
 
-    def __init__(self, collection_name: str = "pairings") -> None:
+    def __init__(self, collection_name: str = "pairings", client=None) -> None:
         self.collection_name = collection_name
-        self._db = None
+        # Injectable for tests against the Firestore emulator
+        self._db = client
 
     def _get_db(self):
         if self._db is None:
@@ -50,7 +58,7 @@ class FirestorePairingStore(BasePairingStore):
         def _sync_create():
             db = self._get_db()
             doc_ref = db.collection(self.collection_name).document(pairing_id)
-            doc_ref.set(record.model_dump(mode="json"))
+            doc_ref.set({**record.model_dump(mode="json"), PURGE_AT_FIELD: record.expires_at})
 
         await asyncio.to_thread(_sync_create)
         return record
@@ -115,20 +123,13 @@ class FirestorePairingStore(BasePairingStore):
             def _claim_in_txn(txn):
                 for doc in txn.get(query):
                     record = PairingRecord.model_validate(doc.to_dict())
-                    record.claim_attempts += 1
-                    if (
-                        record.is_expired
-                        or record.is_claimed
-                        or record.claim_attempts > MAX_CLAIM_ATTEMPTS
-                    ):
+                    if not apply_claim(record, fcm_token, device_secret_hash):
                         txn.update(doc.reference, {"claim_attempts": record.claim_attempts})
                         return None
-
-                    record.fcm_token = fcm_token
-                    record.device_secret_hash = device_secret_hash
-                    record.is_claimed = True
-                    record.claimed_at = utc_now()
-                    txn.update(doc.reference, record.model_dump(mode="json"))
+                    txn.update(
+                        doc.reference,
+                        {**record.model_dump(mode="json"), PURGE_AT_FIELD: DELETE_FIELD},
+                    )
                     return record
                 return None
 

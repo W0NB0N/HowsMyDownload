@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from server import main
+from server.store.cached import CachedPairingStore
 from server.store.firestore import FirestorePairingStore
 from server.store.memory import InMemoryPairingStore
 
@@ -27,7 +28,9 @@ def test_firestore_without_credentials_refuses_to_start(monkeypatch):
 def test_firestore_with_credentials(monkeypatch):
     monkeypatch.setattr(main.settings, "STORE_TYPE", "firestore")
     with patch("server.main.init_firebase", return_value=True):
-        assert isinstance(main.build_pairing_store(), FirestorePairingStore)
+        store = main.build_pairing_store()
+    assert isinstance(store, CachedPairingStore)
+    assert isinstance(store.inner, FirestorePairingStore)
 
 
 def test_unknown_store_type_refuses_to_start(monkeypatch):

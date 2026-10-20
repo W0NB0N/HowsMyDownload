@@ -42,6 +42,21 @@ class PairingRecord(BaseModel):
 MAX_CLAIM_ATTEMPTS = 5
 
 
+def apply_claim(record: PairingRecord, fcm_token: str, device_secret_hash: str) -> bool:
+    """Shared claim rules for every store. Mutates `record`; returns True if claimed.
+
+    Every attempt against an existing code counts, successful or not.
+    """
+    record.claim_attempts += 1
+    if record.is_expired or record.is_claimed or record.claim_attempts > MAX_CLAIM_ATTEMPTS:
+        return False
+    record.fcm_token = fcm_token
+    record.device_secret_hash = device_secret_hash
+    record.is_claimed = True
+    record.claimed_at = utc_now()
+    return True
+
+
 class BasePairingStore(ABC):
     """Abstract interface for storing and querying device pairings."""
 
