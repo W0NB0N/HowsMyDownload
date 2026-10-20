@@ -2,10 +2,13 @@
 
 import asyncio
 import logging
+import random
+import time
 from datetime import timedelta
 
 import firebase_admin
 from firebase_admin import firestore
+from google.api_core import exceptions as api_exceptions
 from google.cloud.firestore import DELETE_FIELD, transactional
 
 from server.store.base import BasePairingStore, PairingRecord, apply_claim, utc_now
@@ -117,23 +120,48 @@ class FirestorePairingStore(BasePairingStore):
                 .limit(1)
             )
 
+            # Resolve target document reference upfront so transaction locks only this
+            # specific document, avoiding collection-wide query contention in emulator.
+            matching_docs = list(query.get())
+            if not matching_docs:
+                return None
+            doc_ref = matching_docs[0].reference
+
             # Read-check-write inside a transaction so two concurrent claims of the same
             # code cannot both succeed and the attempt counter cannot lose increments.
-            @transactional
-            def _claim_in_txn(txn):
-                for doc in txn.get(query):
-                    record = PairingRecord.model_validate(doc.to_dict())
-                    if not apply_claim(record, fcm_token, device_secret_hash):
-                        txn.update(doc.reference, {"claim_attempts": record.claim_attempts})
-                        return None
-                    txn.update(
-                        doc.reference,
-                        {**record.model_dump(mode="json"), PURGE_AT_FIELD: DELETE_FIELD},
-                    )
-                    return record
-                return None
+            for outer_attempt in range(5):
+                call_count = 0
 
-            return _claim_in_txn(db.transaction())
+                @transactional
+                def _claim_in_txn(txn):
+                    nonlocal call_count
+                    call_count += 1
+                    if call_count > 1:
+                        # Desynchronize retry stampedes under high contention (e.g. in emulator)
+                        time.sleep(random.uniform(0.02, 0.05) * call_count)
+
+                    for doc in txn.get(doc_ref):
+                        if not doc.exists:
+                            return None
+                        record = PairingRecord.model_validate(doc.to_dict())
+                        if not apply_claim(record, fcm_token, device_secret_hash):
+                            txn.update(doc_ref, {"claim_attempts": record.claim_attempts})
+                            return None
+                        txn.update(
+                            doc_ref,
+                            {**record.model_dump(mode="json"), PURGE_AT_FIELD: DELETE_FIELD},
+                        )
+                        return record
+                    return None
+
+                try:
+                    return _claim_in_txn(db.transaction(max_attempts=15))
+                except (ValueError, api_exceptions.Aborted):
+                    if outer_attempt == 4:
+                        raise
+                    time.sleep(random.uniform(0.05, 0.15) * (1.5**outer_attempt))
+
+            return None
 
         return await asyncio.to_thread(_sync_claim)
 

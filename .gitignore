@@ -70,3 +70,6 @@ commands.txt
 phase-8-prompt.txt
 implementation_plan.md
 current_build.md
+
+# Emulator logs
+*-debug.log
