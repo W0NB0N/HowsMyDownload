@@ -1,6 +1,6 @@
 # How's My Download (HMD)
 
-[![CI Pipeline](https://github.com/1shav/hows-my-download/actions/workflows/ci.yml/badge.svg)](https://github.com/1shav/hows-my-download/actions/workflows/ci.yml)
+[![CI Pipeline](https://github.com/W0NB0N/How-sMyDownload/actions/workflows/ci.yml/badge.svg)](https://github.com/W0NB0N/How-sMyDownload/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
 ![Android 14](https://img.shields.io/badge/Android-API%2026%E2%80%9335-3DDC84?logo=android&logoColor=white)
@@ -17,7 +17,7 @@
 
 **The Problem**: You start downloading a 50GB game update, a Linux ISO, or a large dataset, and walk away from your desk. Checking download progress requires returning to your computer, remote desktop software, or maintaining battery-draining continuous screen-on sessions.
 
-**The Solution**: **How's My Download** bridges Chrome's native download manager to Android's notification shade using Firebase Cloud Messaging (FCM). With **p50 notification delivery under 200ms**, live progress bars, transfer speeds, and ETAs appear seamlessly on your ambient display and lock screen — while **end-to-end field-level AES-256-GCM encryption** ensures the server never sees your filenames.
+**The Solution**: **How's My Download** bridges Chrome's native download manager to Android's notification shade using Firebase Cloud Messaging (FCM). Live progress bars, transfer speeds, and ETAs appear on your lock screen and update every 2 seconds — while **end-to-end field-level AES-256-GCM encryption** ensures the server never sees your filenames.
 
 ---
 
@@ -76,34 +76,34 @@ Unlike traditional notification relays that transmit user download histories in 
 ## 🚀 Key Engineering Highlights
 
 ### 1. Adaptive Push Coalescing & State Bypass
-Continuous downloads emit events at 10 Hz. Transmitting raw updates would drain mobile batteries and cause notification jitter. HMD's **Push Throttler** (`server/throttler/push_throttler.py`) applies:
-- **Queue Coalescing**: Samples inside the 2.0-second throttle window overwrite interim samples, maintaining a steady 0.5 Hz delivery rate.
-- **State-Change Bypass**: Any state transition (`starting` $\rightarrow$ `downloading` $\rightarrow$ `paused` $\rightarrow$ `completed` $\rightarrow$ `failed`) or download addition/removal bypasses the throttle window instantly (< 15ms latency).
-- **Single-Report Pause Poller**: When a transfer pauses, the extension reports the status once and suspends polling until status changes.
+Every push wakes the phone, so the server caps progress pushes per pairing while keeping state changes instant. HMD's **Push Throttler** (`server/throttler/push_throttler.py`) applies:
+- **Queue Coalescing**: Samples inside the 2.0-second throttle window replace earlier ones, so a burst (several downloads, reconnect retries) becomes at most one push per window.
+- **State-Change Bypass**: Any state transition (`starting` $\rightarrow$ `downloading` $\rightarrow$ `paused` $\rightarrow$ `completed` $\rightarrow$ `failed`) or download addition/removal skips the throttle window.
+- **Single-Report Pause Poller**: When a transfer pauses, the extension reports the status once and stops polling until the status changes.
+- **No sends under locks**: State is updated under a lock, but FCM calls happen outside it, so one slow push never stalls other users.
 
-### 2. Strict Sequence Numbering & 90s Safety Net
-- **Out-of-Order Rejection**: Cellular handovers can cause FCM packets to arrive out of order. HMD stamps every wire dispatch with a strictly incrementing sequence number (`seq`). Packets where `seq <= lastSeq` are discarded.
-- **Local Safety Net Watchdog**: If a laptop lid closes or WiFi drops mid-download, a 90-second coroutine watchdog triggers on the phone, alerting **"PC Offline — Transfer stalled"** and clearing orphaned progress bars.
+### 2. Ordering, Restarts & the "PC Offline" Safety Net
+- **Out-of-Order Rejection**: FCM can deliver out of order. Each push carries `(epoch, seq)`: a strictly increasing sequence number plus the server's boot time. The phone drops stale or duplicate pushes within one epoch and treats a new epoch (server restart) as a fresh stream (`SequenceGate.kt`).
+- **4 KB budget**: FCM data messages are capped at 4 KB. The server packs downloads by priority into a 3.5 KB budget and reports anything it had to leave out.
+- **Process-death-proof watchdog**: If a laptop lid closes or Wi-Fi drops mid-download, an `AlarmManager` alarm (re-armed by every update) alerts **"PC Offline — Transfer stalled"** after 90 s, even if Android has killed the app. `setTimeoutAfter` is a system-enforced backstop that removes orphaned progress bars.
 
 ### 3. Content-Level Privacy Guard
 A native switch in the Android Compose UI (`--privacy [ hide_filenames ]`) redacts filenames at the content level across all notification channels. Filenames appear only inside the app, while shade notifications display sanitized status lines (`Downloading… • 45.2% • 8.4 MB/s`).
 
 ---
 
-## 📊 Measured Telemetry & Benchmarks
+## 📊 Benchmarks
 
-Empirical performance measured on an Oracle Cloud Infrastructure VM (`VM.Standard.A1.Flex`) communicating with a Xiaomi Redmi Note 11S (*Android 13*):
-
-| Metric | Measured Value | Target / Benchmark |
+| Metric | Value | Source |
 |---|---|---|
-| **Notification Latency (p50)** | **184 ms** | < 500 ms |
-| **Notification Latency (p95)** | **412 ms** | < 1,000 ms |
-| **FCM Bandwidth Savings** | **-75.0%** (1,800 vs 7,200 pushes/hr) | > 50% |
-| **Mobile Battery Consumption** | **< 0.8% / hour** (continuous transfer) | < 2% / hr |
-| **Server RAM Footprint** | **34.2 MB RSS** (Uvicorn container) | < 128 MB |
-| **Server CPU Utilization** | **0.18% of 1 OCPU** (10 active streams) | < 5% |
+| **Server handling time per sample** | **1.5 ms p50 / 1.9 ms p95** | `tools/bench_server.py` (in-process, laptop) |
+| **Single-worker throughput** | **~630 samples/s** | same |
+| **FCM payload, one download** | **~360 B** of the 4 KB limit | same |
+| **Progress pushes per pairing** | **≤ 1 per 2 s** (state changes immediate) | by design: `push_throttler.py` |
+| **Server test coverage** | **82%** of server code (Firestore store covered by a separate emulator suite) | `pytest --cov` in CI |
+| **Server → phone latency** | *measure on your device* | `adb logcat -s HMD_LATENCY` → `tools/latency_report.py` |
 
-*Detailed benchmark methodologies, latency distributions, and trade-off analyses are documented in [`docs/metrics.md`](docs/metrics.md).*
+*Methods, environment details, and what hasn't been measured yet are in [`docs/metrics.md`](docs/metrics.md).*
 
 ---
 
@@ -116,7 +116,7 @@ Empirical performance measured on an Oracle Cloud Infrastructure VM (`VM.Standar
 | **Mobile App** | Kotlin 2.0, Jetpack Compose, Material 3 | Declarative reactive UI, CameraX barcode scanning, Preferences DataStore |
 | **Push Transport**| Firebase Cloud Messaging (FCM HTTP v1) | High-priority data delivery without persistent background battery drain |
 | **Infrastructure**| Docker, Nginx, Let's Encrypt, Oracle Cloud | Production reverse proxy, TLS termination, sliding window rate limiting |
-| **Testing & CI** | Pytest, Ruff, JUnit 4, Node:Test, GitHub Actions | 100% automated test coverage across server, extension, and Android clients |
+| **Testing & CI** | Pytest (+ Firestore emulator), Ruff, JUnit 4, Node:Test, GitHub Actions | All three clients tested in CI; extension tests run the real modules against a `chrome.*` fake; a cross-language test checks that Kotlin decrypts the extension's Web Crypto output |
 
 ---
 
@@ -126,8 +126,8 @@ Empirical performance measured on an Oracle Cloud Infrastructure VM (`VM.Standar
 
 ```bash
 # Clone the repository
-git clone https://github.com/1shav/hows-my-download.git
-cd hows-my-download
+git clone https://github.com/W0NB0N/How-sMyDownload.git
+cd How-sMyDownload
 
 # Setup Python virtual environment
 uv venv .venv
