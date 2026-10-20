@@ -37,6 +37,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0",
     "ruff>=0.7.0",
 ]
 
@@ -54,4 +55,12 @@ addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = [".."]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
 
