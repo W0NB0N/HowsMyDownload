@@ -39,6 +39,11 @@
         <receiver
             android:name=".service.NotificationDismissReceiver"
             android:exported="false" />
+
+        <!-- "PC offline" watchdog alarm (survives process death) -->
+        <receiver
+            android:name=".service.StaleWatchdogReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -5,12 +5,8 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.notifs.app.data.PairingApi
 import com.notifs.app.data.PairingDataStore
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -20,21 +16,17 @@ class NotifFcmService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "NotifFcmService"
-        // Rendering runs in coroutines: serialize the seq check + save + render so two pushes
-        // can never interleave or both pass the gate.
+        private const val LATENCY_TAG = "HMD_LATENCY"
+        // Serialize the seq check + save + render so two pushes can never interleave or both
+        // pass the gate (FCM delivers serially today; this keeps it correct if that changes).
         private val messageMutex = Mutex()
         private val finishedDownloadIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-        @Volatile
-        private var safetyNetJob: Job? = null
 
-        fun resetState() {
+        fun resetState(context: android.content.Context) {
             finishedDownloadIds.clear()
-            safetyNetJob?.cancel()
-            safetyNetJob = null
+            StaleWatchdog.disarm(context)
         }
     }
-
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var notificationHelper: NotificationHelper
     private lateinit var dataStore: PairingDataStore
 
@@ -47,7 +39,7 @@ class NotifFcmService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.i(TAG, "New FCM token received")
-        serviceScope.launch {
+        runBlocking(Dispatchers.IO) {
             dataStore.saveFcmToken(token)
             val pairingInfo = dataStore.getPairingInfo()
             val pairingId = pairingInfo.pairingId
@@ -56,7 +48,7 @@ class NotifFcmService : FirebaseMessagingService() {
             if (pairingInfo.isPaired && !pairingId.isNullOrBlank() && !serverUrl.isNullOrBlank()) {
                 if (deviceSecret.isNullOrBlank()) {
                     Log.w(TAG, "Paired without a device secret (pre-upgrade pairing); re-pair to sync token")
-                    return@launch
+                    return@runBlocking
                 }
                 try {
                     when (val code = PairingApi.refreshToken(serverUrl, pairingId, deviceSecret, token)) {
@@ -84,16 +76,16 @@ class NotifFcmService : FirebaseMessagingService() {
         // Check for server-initiated or extension-initiated unpair event
         if (data["event"] == "unpaired") {
             val unpairId = data["pairing_id"] ?: ""
-            serviceScope.launch {
+            runBlocking(Dispatchers.IO) {
                 val currentId = dataStore.getPairingInfo().pairingId
                 if (!currentId.isNullOrBlank() && unpairId != currentId) {
                     // A late unpair for a previous pairing must not tear down the current one
                     Log.w(TAG, "Ignoring unpair event for '$unpairId' (current pairing is '$currentId')")
-                    return@launch
+                    return@runBlocking
                 }
                 Log.i(TAG, "Unpair event received via FCM for pairing_id='$unpairId'. Clearing pairing state.")
                 dataStore.clearPairing()
-                resetState()
+                resetState(applicationContext)
                 notificationHelper.cancelAll()
             }
             return
@@ -108,7 +100,8 @@ class NotifFcmService : FirebaseMessagingService() {
         val pcName = data["pc_name"] ?: "Desktop-PC"
         val downloadsJsonStr = data["downloads"] ?: "[]"
 
-        serviceScope.launch { messageMutex.withLock {
+        // Runs on FCM's worker thread; FCM keeps the service alive until this returns.
+        runBlocking(Dispatchers.IO) { messageMutex.withLock {
             val hideFilenames = dataStore.getHideFilenames()
             val incoming = StreamPosition(epoch = epoch, seq = seq)
             val last = dataStore.getStreamPosition()
@@ -125,6 +118,7 @@ class NotifFcmService : FirebaseMessagingService() {
                     if (seq > 0) dataStore.saveStreamPosition(incoming)
                 }
             }
+            logDeliveryLatency(seq, data["sent_at"])
 
             try {
                 val encKey = dataStore.getEncryptionKey()
@@ -290,18 +284,14 @@ class NotifFcmService : FirebaseMessagingService() {
                     )
                 }
 
-                // 90-second local safety net watchdog: only arm if transfers are ACTIVELY downloading (not paused)
+                // "PC offline" watchdog: armed only while bytes are actually moving (a paused
+                // download legitimately sends nothing). Survives process death; see StaleWatchdog.
                 val hasActivelyTransferring = activeCandidates.any { it.state == "downloading" || it.state == "starting" }
                 if (hasActivelyTransferring) {
-                    safetyNetJob?.cancel()
-                    safetyNetJob = serviceScope.launch {
-                        delay(90_000L)
-                        Log.w(TAG, "Local safety net triggered: 90s elapsed without FCM updates while transfers active")
-                        notificationHelper.showStaleNotification(source = source, pcName = pcName)
-                    }
+                    notificationHelper.cancelStaleNotification() // PC is back
+                    StaleWatchdog.arm(applicationContext, source, pcName)
                 } else {
-                    safetyNetJob?.cancel()
-                    safetyNetJob = null
+                    StaleWatchdog.disarm(applicationContext)
                 }
 
                 // Update active downloads for UI
@@ -312,5 +302,20 @@ class NotifFcmService : FirebaseMessagingService() {
                 Log.e(TAG, "Error processing downloads payload (seq=$seq)", e)
             }
         } }
+    }
+
+    /**
+     * Logs server-dispatch -> phone-receipt latency for docs/metrics.md (parsed by
+     * tools/latency_report.py from `adb logcat -s HMD_LATENCY`). Both clocks are NTP-synced,
+     * so the error is typically a few tens of ms.
+     */
+    private fun logDeliveryLatency(seq: Int, sentAt: String?) {
+        if (sentAt.isNullOrBlank()) return
+        try {
+            val sentMs = java.time.OffsetDateTime.parse(sentAt).toInstant().toEpochMilli()
+            Log.i(LATENCY_TAG, "seq=$seq latency_ms=${System.currentTimeMillis() - sentMs}")
+        } catch (_: Exception) {
+            // Malformed timestamp: metrics only, never fatal
+        }
     }
 }
