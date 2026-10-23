@@ -11,13 +11,14 @@ Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipp
 |---|---|
 | `server/` | FastAPI app. Package is `server` (pyproject maps `server` → `.`), so imports are `from server.x import y` and must be run with the repo root on `PYTHONPATH`. |
 | `server/main.py` | App factory + `lifespan` that wires store, notifier, throttler, tracker into `app.state`. `BodySizeLimitMiddleware` (50 KB, also for chunked bodies). Firestore store is wrapped in `CachedPairingStore`. |
-| `server/api/` | `samples.py` (ingest), `pairings.py` (create/claim/status/delete/token refresh/rotate-secret), `health.py` |
+| `server/api/` | `samples.py` (ingest; response hands over queued commands), `pairings.py` (create/claim/status/delete/token refresh/rotate-secret), `commands.py` (phone→PC pause/resume/restart + expiry sweeper), `health.py` |
+| `server/commands/queue.py` | In-memory `CommandQueue`: one pending command per download, 75s TTL, at-most-once `drain` |
 | `server/tracker/` | `download.py` per-download state machine, `calculator.py` EMA speed/ETA, `manager.py` keyed by `(pairing_id, download_id)` |
 | `server/throttler/push_throttler.py` | 2s per-pairing coalescing, state-change bypass, owns `seq` + `epoch`. State under `_lock`; sends outside it under a per-pairing FIFO send lock |
 | `server/notifier/` | `BaseNotifier`, `console`, `fcm`, `composite` (console+fcm). No LAN notifier. |
 | `server/store/` | `BasePairingStore` + shared `apply_claim`, `memory`, `firestore` (sync client in `asyncio.to_thread`, transactional claim, `purge_at` TTL field on unclaimed docs, injectable client), `cached` (30s read-through cache; writes invalidate before and after) |
-| `extension/` | MV3, plain ES modules, no build step, no deps. `background/{service-worker,poller,api,crypto}.js`, `popup/` (incl. vendored `qrcode.js`). |
-| `android/` | Kotlin + Compose, single module `app`, package `com.notifs.app`. Most UI lives in `MainActivity.kt` (~900 lines). |
+| `extension/` | MV3, plain ES modules, no build step, no deps. `background/{service-worker,poller,api,crypto,commands}.js`, `popup/` (incl. vendored `qrcode.js`). New background files must also be added to the list in `tools/package_extension.py`. |
+| `android/` | Kotlin + Compose, single module `app`, package `com.notifs.app`. Most UI lives in `MainActivity.kt` (~1000 lines). Commands: `service/DownloadCommands.kt` (actions per state, send, error text), `service/CommandReceiver.kt` (notification buttons). |
 | `deploy/` | Dockerfile, docker-compose, nginx.conf, systemd unit, `oracle-setup.sh`, Firestore rules |
 | `tools/` | `sample_replay.py` (+ `sample_traces/`), `fcm_test_sender.py`, `package_extension.py` (→ `dist/`), `bench_server.py`, `latency_report.py` (parses `HMD_LATENCY` logcat), `firestore-emulator/firebase.json`, icon scripts |
 | `docs/` | `protocol.md` (schema v1), `ADR-0001-architecture.md`, `metrics.md`, `store-listing.md` |
@@ -39,7 +40,7 @@ uvicorn server.main:app --reload --port 8000    # from repo root; NOTIFIER_TYPE=
 python tools/sample_replay.py tools/sample_traces/ubuntu_download_trace.json
 
 # Extension tests (Node 22, no npm install needed)
-cd extension && node --test test_poller.js test_crypto.js test_api.js   # test_fake_chrome.js stubs chrome.* / fetch
+cd extension && node --test test_poller.js test_crypto.js test_api.js test_commands.js   # test_fake_chrome.js stubs chrome.* / fetch
 
 # Android (needs android/app/google-services.json; CI copies the .example if absent)
 cd android && ./gradlew testDebugUnitTest assembleDebug
@@ -63,11 +64,12 @@ CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore
 - Phone ordering lives in `android/.../service/SequenceGate.kt`: drop other pairings, compare `seq` only within one `epoch`, new epoch = new stream.
 - Pairings are purged on FCM errors only when the token is dead (`is_dead_token_error`), never for message-level errors.
 - The extension clears credentials on 401 **unless** the stored secret changed while the request was in flight (rotation race).
+- Commands (protocol §5): device secret sends, extension secret collects/reports. Delivered on the samples response while transferring, else by the extension's command watch (3s for 10 min after activity, then a 30s alarm) while something is paused or failed <1h ago. Only failures are pushed back (`command_result` FCM event, fixed error codes, no `seq`). Restart = cancel + re-download the original URL + erase the old entry, reported once as `erased`.
 
 ## Known gaps / gotchas (verified in code, Oct 2026)
 
 - `STORE_TYPE=memory` loses pairings on restart (extension gets 401 and unpairs). To test restart continuity locally, use `STORE_TYPE=firestore`.
-- Tracker, throttler `seq`/`epoch`, rate limiters, and the auth cache are in-process memory: the server **must** run one Uvicorn worker (Dockerfile pins `--workers 1`).
+- Tracker, throttler `seq`/`epoch`, rate limiters, the command queue, and the auth cache are in-process memory: the server **must** run one Uvicorn worker (Dockerfile pins `--workers 1`).
 - Speed uses only sample (PC-clock) timestamps; idle cleanup uses the server's `time.monotonic()`. Don't mix the two clocks.
 - An illegal state transition from the source resets the tracked download instead of raising (the extension would otherwise retry a 500 forever).
 - The Firestore TTL policy on `pairings.purge_at` must be enabled in the console (deploy guide step 6.4).

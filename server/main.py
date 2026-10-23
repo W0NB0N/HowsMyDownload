@@ -1,5 +1,7 @@
 """FastAPI application entry point for Download Notifs Backend."""
 
+import asyncio
+import contextlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -8,9 +10,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from server.api.commands import router as commands_router
+from server.api.commands import run_expiry_sweeper
 from server.api.health import router as health_router
 from server.api.pairings import router as pairings_router
 from server.api.samples import router as samples_router
+from server.commands.queue import CommandQueue
 from server.config import settings
 from server.firebase_app import init_firebase
 from server.notifier.composite import CompositeNotifier
@@ -74,11 +79,17 @@ async def lifespan(app: FastAPI):
     app.state.notifier = notifier
     app.state.throttler = throttler
     app.state.tracker_manager = tracker_manager
+    # Phone -> PC commands; in-process like the tracker (single worker)
+    app.state.command_queue = CommandQueue()
+    expiry_sweeper = asyncio.create_task(run_expiry_sweeper(app))
     logger.info("Server started: store=%s notifier=%s epoch=%d",
                 type(pairing_store).__name__, notifier_type, throttler.epoch)
 
     yield
 
+    expiry_sweeper.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await expiry_sweeper
     await tracker_manager.close()
 
 
@@ -189,6 +200,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(samples_router)
     app.include_router(pairings_router)
+    app.include_router(commands_router)
 
     @app.get("/")
     async def root():

@@ -6,8 +6,9 @@ Contracts between the components of **How's My Download**:
 2. **Server ➔ FCM ➔ Android**: FCM data payload
 3. **Pairing**: `/v1/pairings` (create, claim, status, token refresh, rotate, unpair)
 4. **Field-level encryption** and the **security model**
+5. **Download commands** (phone ➔ PC): pause, resume, restart
 
-All IDs in paths are validated: `pairing_id` must be a UUID and `code` must be 6 alphanumerics, otherwise `422`.
+All IDs in paths are validated: `pairing_id` must be a UUID, `code` must be 6 alphanumerics and `command_id` 32 lowercase hex characters, otherwise `422`.
 
 ---
 
@@ -44,13 +45,14 @@ Authorization: Bearer <extension_secret>
 - `pairing_id`: ignored for authorization; the server uses the pairing that owns the bearer secret.
 - `filename` *(required)* and `mime_type` *(optional)*: **always ciphertext** (section 4). The extension truncates filenames to 120 characters (keeping the extension) before encrypting, so a single item stays small.
 - `total_bytes`: `null` if unknown.
-- `state`: `starting | downloading | paused | completed | failed | erased`.
+- `state`: `starting | downloading | paused | completed | failed | erased`. The extension sends `erased` once for a download replaced by a phone `restart`.
+- `can_resume` *(optional)*: `true` on a `failed` download Chrome can resume without starting over. Omitted otherwise.
 - Limits: ≤ 100 downloads, filename ≤ 1024 chars, request body ≤ 50 KB.
 
 ### Responses
 | Status | Meaning |
 |---|---|
-| `200` | `{"status": "ok", "processed": 1, "pairing_id": "..."}` |
+| `200` | `{"status": "ok", "processed": 1, "pairing_id": "...", "commands": [...]}`. `commands` hands over pending phone commands (section 5) and removes them from the queue. |
 | `401` | Missing/invalid secret, or the secret of an unclaimed pairing whose code expired |
 | `413` | Body > 50 KB (also enforced for chunked bodies without `Content-Length`) |
 | `422` | Schema validation failure |
@@ -86,7 +88,7 @@ FCM **data** messages (not notification messages), so `NotifFcmService` renders 
 | `downloads` | Compact JSON. `null` fields are omitted; `mime_type` is never forwarded (the phone does not use it). |
 | `omitted` | Present only when the list was trimmed to fit FCM's 4096-byte data limit (the server budgets 3584 bytes). Terminal transitions (`completed`/`failed`/`erased`) are kept first. While `omitted > 0`, the phone keeps notifications for downloads missing from the list. |
 
-Item fields: `id`, `filename` (ciphertext), `percentage` (0–100, absent if unknown), `speed` (EMA bytes/s), `eta_seconds` (absent if unknown), `state`, `bytes_downloaded`, `total_bytes`.
+Item fields: `id`, `filename` (ciphertext), `percentage` (0–100, absent if unknown), `speed` (EMA bytes/s), `eta_seconds` (absent if unknown), `state`, `bytes_downloaded`, `total_bytes`, `can_resume` (only present, as `true`, on a resumable `failed` download).
 
 ### Phone-side ordering (`SequenceGate.kt`)
 1. Drop pushes whose `pairing_id` differs from the current pairing.
@@ -99,6 +101,12 @@ Item fields: `id`, `filename` (ciphertext), `percentage` (0–100, absent if unk
 ```
 Sent when the **extension** unpairs. The phone ignores it unless `pairing_id` matches its current pairing.
 
+### Command result event
+```json
+{ "event": "command_result", "pairing_id": "...", "command_id": "<32 hex>", "download_id": "42", "action": "resume", "ok": "false", "error": "expired" }
+```
+Sent (high priority, TTL 60 s) when a phone command failed on the PC or expired uncollected. It has no `seq` and is handled before the sequence gate. Only failures are pushed today; a success shows up as the next progress push. See section 5.
+
 ### Throttling
 At most one progress push per 2 s per pairing. Intermediate samples are merged into the latest one. State changes and added/removed downloads skip the wait and push immediately.
 
@@ -110,8 +118,8 @@ There are two credentials per pairing. Each is a 256-bit random token (`secrets.
 
 | Credential | Issued by | Held by | Authorizes |
 |---|---|---|---|
-| extension secret | `POST /v1/pairings` | extension | samples, status, rotate, unpair |
-| device secret | `POST /v1/pairings/{code}/claim` | phone | status, FCM token refresh, unpair |
+| extension secret | `POST /v1/pairings` | extension | samples, status, rotate, unpair, collect commands, report command results |
+| device secret | `POST /v1/pairings/{code}/claim` | phone | status, FCM token refresh, unpair, send download commands |
 
 ### 3.1 Create (extension ➔ server)
 `POST /v1/pairings`, rate limited to 10/min per IP.
@@ -186,3 +194,62 @@ For every `/{pairing_id}` route, an unknown pairing and a wrong secret both retu
 - **Fails closed**: if the extension is paired but has no valid key, or encryption throws, the sample is dropped and never sent in plaintext.
 - **Phone**: decrypts locally. Anything it cannot authenticate (missing key, wrong key, tampered data) is shown as `Encrypted file`, never as ciphertext.
 - **Cross-implementation test**: `CryptoUtilsTest.testDecryptsCiphertextFromTheExtension` decrypts vectors produced by `extension/background/crypto.js`.
+
+---
+
+## 5. Download commands (phone ➔ server ➔ extension)
+
+The phone can **pause**, **resume** or **restart** a download on the PC. The extension has no push channel, so the server queues commands until the extension collects them:
+
+- **While a transfer is active**, the `/v1/samples` response carries them (`commands`), so a command costs no extra request and lands within ~2 s.
+- **While nothing is transferring but something is controllable** (a paused download, or one that failed in the last hour), the extension polls `GET /v1/pairings/{pairing_id}/commands` every 3 s for 10 minutes after the last activity, then every 30 s (`chrome.alarms`, Chrome's minimum).
+
+Delivery is **at most once**: a command is removed from the queue when it is handed over. The queue lives in server memory (single worker, like the tracker). A restart drops pending commands.
+
+### 5.1 Send (phone ➔ server)
+`POST /v1/pairings/{pairing_id}/commands` with `Authorization: Bearer <device secret>`, rate limited to 20/min per pairing.
+```json
+{ "download_id": "42", "action": "pause" }
+```
+`action`: `pause | resume | restart`. `download_id` matches `^[A-Za-z0-9_-]{1,128}$` (the extension also requires digits).
+
+`202 Accepted`:
+```json
+{
+  "status": "queued",
+  "command": { "command_id": "<32 hex>", "download_id": "42", "action": "pause", "issued_at": "..." },
+  "expires_in_sec": 75,
+  "pc_last_seen_sec": 3
+}
+```
+`pc_last_seen_sec` is the time since the extension last collected commands or sent a sample (`null` if never since the server started). It is a hint only, because an idle extension with nothing to control does not poll.
+
+There is one pending command per download. A newer tap replaces an older one that hasn't been collected yet (pause, then resume, before the PC picks it up, delivers only resume). An identical tap returns the existing command. `403` with the extension secret.
+
+### 5.2 Collect (extension ➔ server)
+`GET /v1/pairings/{pairing_id}/commands` with `Authorization: Bearer <extension secret>`, rate limited to 20 per 30 s per pairing. Returns `{"commands": [...]}` and removes them. `403` with the device secret.
+
+### 5.3 Execute (extension)
+| Action | Running | Paused | Failed (interrupted) | Completed |
+|---|---|---|---|---|
+| `pause` | `chrome.downloads.pause` | no-op | `invalid_state` | `invalid_state` |
+| `resume` | no-op | `chrome.downloads.resume` | resume if `canResume`, else `not_resumable` | `invalid_state` |
+| `restart` | cancel, then download the original `url` again | same | download the original `url` again | `invalid_state` |
+
+A restart only re-fetches the item's own `http(s)`/`ftp` URL (`blob:`/`data:` → `unsupported_url`). The new download gets a new id. The old entry is erased from Chrome's list and reported once with state `erased`, so the phone drops it instead of showing "failed". Unknown ids → `not_found`; Chrome API errors → `browser_error`. After acting, the extension samples immediately.
+
+### 5.4 Report result (extension ➔ server)
+`POST /v1/pairings/{pairing_id}/commands/{command_id}/result` with `Authorization: Bearer <extension secret>`:
+```json
+{ "download_id": "42", "action": "resume", "ok": false, "error": "not_resumable" }
+```
+`error` must be one of `not_found | invalid_state | not_resumable | unsupported_url | browser_error`, never free text, so nothing about the PC leaks to the phone. Failures are forwarded to the phone as a `command_result` event (section 2). The extension reports only failures.
+
+### 5.5 Expiry
+Commands not collected within **75 s** expire. A server task checks every 5 s and sends the phone `command_result` with `error: "expired"` ("PC didn't respond").
+
+### 5.6 Phone behaviour
+- Notification buttons: running → **Pause**; paused → **Resume**, **Restart**; failed → **Restart** (+ **Resume** if `can_resume`). Restart is left off running downloads in the shade because a notification can't ask for confirmation. The app offers it with a confirmation dialog.
+- On tap, the buttons are replaced by "Pausing…" etc. until the state changes, a `command_result` failure arrives (the message is shown and the buttons come back), or 90 s pass.
+- A paused download's notification lives 30 minutes (`setTimeoutAfter`) instead of 150 s, because a paused download sends no further updates.
+- The app keeps failed downloads listed for an hour so they can still be restarted.

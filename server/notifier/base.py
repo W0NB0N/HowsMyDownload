@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from server.schemas import PushPayload
+from server.schemas import CommandResultEvent, PushPayload
 
 
 class BaseNotifier(ABC):
@@ -15,4 +15,8 @@ class BaseNotifier(ABC):
 
     async def send_unpair_event(self, token: str, pairing_id: str) -> None:
         """Sends an unpair notification signal to the device if supported."""
+        return None
+
+    async def send_command_result(self, token: str | None, event: CommandResultEvent) -> None:
+        """Tells the device how a pause/resume/restart command ended, if supported."""
         return None

@@ -67,6 +67,7 @@ class TrackedDownload:
         self.total_bytes = initial_item.total_bytes
         self.state = initial_item.state
         self.mime_type = initial_item.mime_type
+        self.can_resume = initial_item.can_resume
 
         self.created_at = timestamp if timestamp is not None else time.time()
         self.last_updated_at = self.created_at
@@ -105,6 +106,8 @@ class TrackedDownload:
             self.total_bytes = item.total_bytes
         if item.mime_type:
             self.mime_type = item.mime_type
+        # Not sticky: it describes the current interruption only
+        self.can_resume = item.can_resume
 
         # Validate and apply state transition
         if item.state != self.state:
@@ -142,4 +145,6 @@ class TrackedDownload:
             bytes_downloaded=self.bytes_downloaded,
             total_bytes=self.total_bytes,
             mime_type=self.mime_type,
+            # Only meaningful (and only sent on the wire) while failed and resumable
+            can_resume=True if self.state == DownloadState.FAILED and self.can_resume else None,
         )

@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Sequence
 
 from server.notifier.base import BaseNotifier
-from server.schemas import PushPayload
+from server.schemas import CommandResultEvent, PushPayload
 
 
 class CompositeNotifier(BaseNotifier):
@@ -50,3 +50,10 @@ class CompositeNotifier(BaseNotifier):
         ]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def send_command_result(self, token: str | None, event: CommandResultEvent) -> None:
+        """Dispatches a command outcome to all child notifiers."""
+        await asyncio.gather(
+            *(notifier.send_command_result(token, event) for notifier in self.notifiers),
+            return_exceptions=True,
+        )

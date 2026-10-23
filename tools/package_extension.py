@@ -26,6 +26,7 @@ def package_extension():
     include_paths = [
         "manifest.json",
         "background/api.js",
+        "background/commands.js",
         "background/crypto.js",
         "background/poller.js",
         "background/service-worker.js",

@@ -7,6 +7,7 @@ package-dir = {"server" = "."}
 packages = [
     "server",
     "server.api",
+    "server.commands",
     "server.notifier",
     "server.store",
     "server.throttler",

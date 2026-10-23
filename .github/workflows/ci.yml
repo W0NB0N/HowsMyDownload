@@ -145,4 +145,4 @@ jobs:
 
       - name: Run Extension Unit Tests (Poller, API client & AES Crypto)
         run: |
-          node --test test_poller.js test_crypto.js test_api.js
+          node --test test_poller.js test_crypto.js test_api.js test_commands.js

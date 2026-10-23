@@ -31,6 +31,7 @@ async def receive_sample(
     payload: SamplePayload,
     tracker: TrackerDep,
     auth_record: AuthPairingDep,
+    request: Request,
 ) -> SampleResponse:
     """Ingests a download sample batch, computes metrics, and dispatches to notifier."""
     # Ensure pairing_id matches the authenticated pairing
@@ -41,8 +42,16 @@ async def receive_sample(
         payload,
         target_token=auth_record.fcm_token,
     )
+
+    # While a transfer is active the extension samples every 2s, so phone commands ride back
+    # on the response instead of costing a separate poll. Drained only after the sample was
+    # processed: a request that fails above leaves the commands queued.
+    queue = getattr(request.app.state, "command_queue", None)
+    commands = queue.drain(auth_record.pairing_id) if queue is not None else []
+
     return SampleResponse(
         status="ok",
         processed=len(push_payload.downloads),
         pairing_id=payload.pairing_id,
+        commands=commands,
     )

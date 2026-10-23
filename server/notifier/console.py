@@ -4,7 +4,7 @@ import contextlib
 import sys
 
 from server.notifier.base import BaseNotifier
-from server.schemas import DownloadState, PushPayload
+from server.schemas import CommandResultEvent, DownloadState, PushPayload
 
 # Reconfigure stdout for UTF-8 on Windows if possible
 if hasattr(sys.stdout, "reconfigure"):
@@ -97,6 +97,18 @@ class ConsoleNotifier(BaseNotifier):
             # Fallback for strict ASCII encodings
             clean_lines = [line.encode("ascii", errors="replace").decode("ascii") for line in lines]
             print("\n".join(clean_lines), file=self.stream)
+
+    async def send_command_result(self, token: str | None, event: CommandResultEvent) -> None:
+        outcome = (
+            f"{CLR_GREEN}ok{CLR_RESET}"
+            if event.ok
+            else f"{CLR_RED}failed ({event.error or 'unknown'}){CLR_RESET}"
+        )
+        print(
+            f"{CLR_PURPLE}[CMD {event.command_id[:8]}]{CLR_RESET} "
+            f"{event.action.value} download {event.download_id}: {outcome}",
+            file=self.stream,
+        )
 
     def _format_state(self, state: DownloadState) -> str:
         if state == DownloadState.DOWNLOADING:

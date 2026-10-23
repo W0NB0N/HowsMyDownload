@@ -1,11 +1,16 @@
 package com.notifs.app.service
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import com.notifs.app.MainActivity
 import com.notifs.app.R
@@ -19,7 +24,14 @@ class NotificationHelper(private val context: Context) {
         const val GROUP_DOWNLOADS = "com.notifs.app.DOWNLOADS_GROUP"
         const val SUMMARY_ID = 990
         const val ACTION_DISMISSED = "com.notifs.app.ACTION_DISMISSED"
+        const val ACTION_COMMAND = "com.notifs.app.ACTION_COMMAND"
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
+        const val EXTRA_COMMAND = "extra_command"
+        const val EXTRA_STATE = "extra_state"
+
+        // Stored on download notifications so their buttons can be rebuilt after a failed command
+        private const val EXTRA_HMD_STATE = "com.notifs.app.extra.STATE"
+        private const val EXTRA_HMD_CAN_RESUME = "com.notifs.app.extra.CAN_RESUME"
 
         private const val BRAND_COLOR = 0xFF8A05FF.toInt()
 
@@ -29,7 +41,15 @@ class NotificationHelper(private val context: Context) {
          * "PC offline" alert normally fires first.
          */
         const val PROGRESS_TIMEOUT_MS = 150_000L
+
+        /**
+         * A paused download is reported once and then sends nothing, so its bar (and Resume
+         * button) needs a much longer life than a running one. The extension keeps listening
+         * for commands while anything is paused.
+         */
+        const val PAUSED_TIMEOUT_MS = 30 * 60_000L
         private const val STALE_NOTIFICATION_ID = 9999
+        private const val COMMAND_ERROR_ID = 9998
     }
 
     private val notificationManager =
@@ -93,6 +113,93 @@ class NotificationHelper(private val context: Context) {
         return (downloadId.hashCode() and 0x7FFFFFFF) + 1000
     }
 
+    private fun commandIntent(
+        downloadId: String,
+        action: DownloadCommands.Action,
+        state: String
+    ): PendingIntent {
+        val intent = Intent(context, CommandReceiver::class.java).apply {
+            this.action = ACTION_COMMAND
+            // Unique per download + action, so PendingIntents don't overwrite each other
+            data = Uri.parse("hmd://command/${Uri.encode(downloadId)}/${action.wire}")
+            putExtra(EXTRA_DOWNLOAD_ID, downloadId)
+            putExtra(EXTRA_COMMAND, action.wire)
+            putExtra(EXTRA_STATE, state)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            getNotificationId(downloadId),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun addCommandActions(
+        builder: NotificationCompat.Builder,
+        downloadId: String,
+        state: String,
+        canResume: Boolean
+    ) {
+        for (action in DownloadCommands.notificationActions(state, canResume)) {
+            builder.addAction(action.icon, action.label, commandIntent(downloadId, action, state))
+        }
+        builder.addExtras(Bundle().apply {
+            putString(EXTRA_HMD_STATE, state)
+            putBoolean(EXTRA_HMD_CAN_RESUME, canResume)
+        })
+    }
+
+    private fun findActive(downloadId: String): StatusBarNotification? {
+        val id = getNotificationId(downloadId)
+        return notificationManager.activeNotifications.firstOrNull { it.id == id }
+    }
+
+    /** Swaps the buttons for "Pausing…" etc. the moment a command is sent. */
+    fun markCommandPending(downloadId: String, action: DownloadCommands.Action) {
+        val active = findActive(downloadId) ?: return
+        val builder = Notification.Builder.recoverBuilder(context, active.notification)
+            .setActions()
+            .setContentText(action.pendingLabel)
+            .setOnlyAlertOnce(true)
+        notificationManager.notify(active.id, builder.build())
+    }
+
+    /**
+     * Shows why a command failed on the download's notification and restores its buttons. If
+     * the notification is gone (timed out, dismissed), posts a standalone alert instead.
+     */
+    fun markCommandFailed(downloadId: String, action: DownloadCommands.Action, message: String) {
+        val active = findActive(downloadId)
+        val state = active?.notification?.extras?.getString(EXTRA_HMD_STATE)
+        if (active != null && state != null) {
+            val canResume = active.notification.extras.getBoolean(EXTRA_HMD_CAN_RESUME)
+            val actions = DownloadCommands.notificationActions(state, canResume).map {
+                Notification.Action.Builder(
+                    Icon.createWithResource(context, it.icon),
+                    it.label,
+                    commandIntent(downloadId, it, state)
+                ).build()
+            }
+            val builder = Notification.Builder.recoverBuilder(context, active.notification)
+                .setActions(*actions.toTypedArray())
+                .setContentText("✕ $message")
+                .setOnlyAlertOnce(true)
+            notificationManager.notify(active.id, builder.build())
+            return
+        }
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setColor(BRAND_COLOR)
+            .setContentTitle("Couldn't ${action.verb} download")
+            .setContentText(message)
+            .setAutoCancel(true)
+            .setTimeoutAfter(PROGRESS_TIMEOUT_MS)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        notificationManager.notify(COMMAND_ERROR_ID, builder.build())
+    }
+
     fun showProgressNotification(
         downloadId: String,
         filename: String,
@@ -102,7 +209,9 @@ class NotificationHelper(private val context: Context) {
         source: String = "Chrome",
         pcName: String = "Desktop-PC",
         hideFilenames: Boolean = false,
-        state: String = "downloading"
+        state: String = "downloading",
+        // A command sent from this phone that the PC hasn't acted on yet
+        pendingAction: DownloadCommands.Action? = null
     ) {
         val notifId = getNotificationId(downloadId)
 
@@ -121,6 +230,7 @@ class NotificationHelper(private val context: Context) {
         }
 
         val contentText = when {
+            pendingAction != null -> "$pctStr · ${pendingAction.pendingLabel}"
             isPaused -> "$pctStr · PAUSED"
             etaStr.isNotBlank() -> "$pctStr · $speedStr · $etaStr"
             else -> "$pctStr · $speedStr"
@@ -164,8 +274,13 @@ class NotificationHelper(private val context: Context) {
             .setGroup(GROUP_DOWNLOADS)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             .setProgress(100, pctInt, isIndeterminate)
-            .setTimeoutAfter(PROGRESS_TIMEOUT_MS)
+            .setTimeoutAfter(if (isPaused) PAUSED_TIMEOUT_MS else PROGRESS_TIMEOUT_MS)
             .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
+
+        // Buttons are hidden while a command is in flight so it can't be sent twice
+        if (pendingAction == null) {
+            addCommandActions(builder, downloadId, state, canResume = false)
+        }
 
         notificationManager.notify(notifId, builder.build())
     }
@@ -176,7 +291,8 @@ class NotificationHelper(private val context: Context) {
         success: Boolean,
         source: String = "Chrome",
         pcName: String = "Desktop-PC",
-        hideFilenames: Boolean = false
+        hideFilenames: Boolean = false,
+        canResume: Boolean = false
     ) {
         val notifId = getNotificationId(downloadId)
 
@@ -209,6 +325,10 @@ class NotificationHelper(private val context: Context) {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(if (success) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_ERROR)
             .setVisibility(if (hideFilenames) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
+
+        if (!success) {
+            addCommandActions(builder, downloadId, "failed", canResume)
+        }
 
         notificationManager.notify(notifId, builder.build())
     }
