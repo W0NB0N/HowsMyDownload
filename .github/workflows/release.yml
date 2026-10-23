@@ -1,0 +1,124 @@
+name: Build APK & Release
+
+# Builds a signed release APK from YOUR Firebase project's google-services.json, plus the
+# extension zip. Run it manually (Actions > Build APK & Release > Run workflow), or push a
+# tag like v0.2.0 to also publish a GitHub Release. Setup: docs/self-hosting.md.
+#
+# Never runs on pull requests: it needs repository secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Server used when pairing by typed code (QR codes carry their own URL). Empty = HMD_SERVER_URL variable, else the default in build.gradle.kts."
+        required: false
+        default: ""
+      application_id:
+        description: "Android package name; must match google-services.json. Empty = HMD_APPLICATION_ID variable, else com.notifs.app."
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # only used to publish the GitHub Release on tag pushes
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Signed APK + extension zip
+    runs-on: ubuntu-latest
+    env:
+      HMD_SERVER_URL: ${{ inputs.server_url || vars.HMD_SERVER_URL }}
+      HMD_APPLICATION_ID: ${{ inputs.application_id || vars.HMD_APPLICATION_ID || 'com.notifs.app' }}
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      HMD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      HMD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      HMD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          missing=()
+          for pair in GOOGLE_SERVICES_JSON:GOOGLE_SERVICES_JSON ANDROID_KEYSTORE_BASE64:ANDROID_KEYSTORE_BASE64 \
+                      HMD_KEYSTORE_PASSWORD:ANDROID_KEYSTORE_PASSWORD HMD_KEY_ALIAS:ANDROID_KEY_ALIAS \
+                      HMD_KEY_PASSWORD:ANDROID_KEY_PASSWORD; do
+            env_name="${pair%%:*}"; secret_name="${pair##*:}"
+            [ -n "${!env_name}" ] || missing+=("$secret_name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error title=Missing repository secrets::Add ${missing[*]} under Settings > Secrets and variables > Actions. See docs/self-hosting.md, step 3."
+            exit 1
+          fi
+
+      - name: Check tag matches app and extension versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          app=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          ext=$(python3 -c "import json; print(json.load(open('extension/manifest.json'))['version'])")
+          if [ "$GITHUB_REF_NAME" != "v$app" ] || [ "$GITHUB_REF_NAME" != "v$ext" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match app v$app / extension v$ext"
+            exit 1
+          fi
+
+      - name: Write google-services.json and keystore
+        run: |
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          python3 tools/check_google_services.py android/app/google-services.json "$HMD_APPLICATION_ID"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "HMD_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests and signed release build
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew testReleaseUnitTest assembleRelease
+
+      - name: Verify APK signature
+        run: |
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Collect APK, extension zip and checksums
+        run: |
+          version=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          mkdir out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/hows-my-download-v${version}.apk"
+          python3 tools/package_extension.py
+          cp dist/*.zip out/
+          (cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hows-my-download-${{ github.ref_name }}
+          path: out/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --title "How's My Download $GITHUB_REF_NAME" \
+            --generate-notes --verify-tag
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks" android/app/google-services.json

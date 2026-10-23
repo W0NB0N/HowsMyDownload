@@ -35,6 +35,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import com.notifs.app.BuildConfig
 import com.notifs.app.data.PairingDataStore
 import com.notifs.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -322,7 +323,7 @@ private suspend fun handleQrPayload(
 
             if (rawText.trim().startsWith("{")) {
                 val json = JSONObject(rawText)
-                serverUrl = json.optString("server_url", "http://localhost:8000")
+                serverUrl = json.optString("server_url", BuildConfig.DEFAULT_SERVER_URL)
                 code = json.optString("code", "")
                 pcName = json.optString("pc_name", "Desktop-PC")
                 if (json.has("enc_key") && !json.isNull("enc_key")) {
@@ -336,7 +337,7 @@ private suspend fun handleQrPayload(
                 if (parts.size > 3) encryptionKey = parts[3].trim()
             } else {
                 code = rawText.trim()
-                serverUrl = "http://localhost:8000"
+                serverUrl = BuildConfig.DEFAULT_SERVER_URL
             }
 
             if (code.isBlank()) {

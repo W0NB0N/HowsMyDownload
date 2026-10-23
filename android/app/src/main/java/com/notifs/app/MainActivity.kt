@@ -313,7 +313,7 @@ fun HomeScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Server: ${pairingInfo.serverUrl ?: "http://localhost:8000"}",
+                            text = "Server: ${pairingInfo.serverUrl ?: BuildConfig.DEFAULT_SERVER_URL}",
                             color = TextDim,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
@@ -453,7 +453,7 @@ fun HomeScreen(
                                             return@withContext
                                         }
 
-                                        val serverTarget = pairingInfo.serverUrl?.takeIf { it.isNotBlank() } ?: "https://hmd-api.duckdns.org"
+                                        val serverTarget = pairingInfo.serverUrl?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_SERVER_URL
                                         val cleanUrl = serverTarget.trim().trimEnd('/')
                                         // Manual codes carry no encryption key (it only travels in the
                                         // QR), so filenames show as "Encrypted file" on this phone.
