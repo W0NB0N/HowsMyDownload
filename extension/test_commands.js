@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tests for phone commands: background/commands.js (execution and validation), the command
  * plumbing in api.js, and the poller's command watch / restart bookkeeping.
  */
