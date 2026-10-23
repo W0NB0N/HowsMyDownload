@@ -45,6 +45,11 @@
             android:name=".service.NotificationDismissReceiver"
             android:exported="false" />
 
+        <!-- Pause / Resume / Restart buttons on download notifications -->
+        <receiver
+            android:name=".service.CommandReceiver"
+            android:exported="false" />
+
         <!-- "PC offline" watchdog alarm (survives process death) -->
         <receiver
             android:name=".service.StaleWatchdogReceiver"

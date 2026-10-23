@@ -28,7 +28,49 @@ object PairingApi {
         .writeTimeout(5, TimeUnit.SECONDS)
         .build()
 
+    // Commands run inside a BroadcastReceiver's goAsync() window (~10s): cap the whole call
+    private val commandClient = client.newBuilder()
+        .callTimeout(8, TimeUnit.SECONDS)
+        .build()
+
+    /** HTTP status of a command request, plus how long ago the server last heard from the PC. */
+    data class CommandResponse(val code: Int, val pcLastSeenSec: Int?)
+
     private fun endpoint(serverUrl: String, path: String) = serverUrl.trim().trimEnd('/') + path
+
+    /**
+     * Asks the PC to pause/resume/restart a download. The server queues it for the extension;
+     * 202 means queued, not executed. Throws IOException on network failure.
+     */
+    fun sendCommand(
+        serverUrl: String,
+        pairingId: String,
+        deviceSecret: String,
+        downloadId: String,
+        action: String
+    ): CommandResponse {
+        val body = JSONObject()
+            .put("download_id", downloadId)
+            .put("action", action)
+            .toString()
+            .toRequestBody(JSON)
+        val request = Request.Builder()
+            .url(endpoint(serverUrl, "/v1/pairings/$pairingId/commands"))
+            .header("Authorization", "Bearer $deviceSecret")
+            .post(body)
+            .build()
+        commandClient.newCall(request).execute().use { response ->
+            val lastSeen = if (response.isSuccessful) {
+                runCatching {
+                    val json = JSONObject(response.body?.string().orEmpty())
+                    if (json.isNull("pc_last_seen_sec")) null else json.getInt("pc_last_seen_sec")
+                }.getOrNull()
+            } else {
+                null
+            }
+            return CommandResponse(response.code, lastSeen)
+        }
+    }
 
     /** Claims a pairing code. Throws ApiException (HTTP error) or IOException (network). */
     fun claim(serverUrl: String, code: String, fcmToken: String): ClaimResult {

@@ -67,15 +67,24 @@ pairing_create_limiter = SlidingWindowRateLimiter(max_requests=10, window_sec=60
 pairing_claim_limiter = SlidingWindowRateLimiter(max_requests=10, window_sec=60.0)
 pairing_manage_limiter = SlidingWindowRateLimiter(max_requests=30, window_sec=60.0)
 
+# Download commands, keyed by pairing. The extension polls for commands every 3s while a
+# download is paused (10 per 30s) plus a 30s alarm; a phone user taps far less than this.
+command_send_limiter = SlidingWindowRateLimiter(max_requests=20, window_sec=60.0)
+command_poll_limiter = SlidingWindowRateLimiter(max_requests=20, window_sec=30.0)
+command_result_limiter = SlidingWindowRateLimiter(max_requests=30, window_sec=60.0)
+
 ALL_LIMITERS = (
     sample_rate_limiter,
     pairing_create_limiter,
     pairing_claim_limiter,
     pairing_manage_limiter,
+    command_send_limiter,
+    command_poll_limiter,
+    command_result_limiter,
 )
 
 
-def _raise_if_limited(limiter: SlidingWindowRateLimiter, key: str) -> None:
+def raise_if_limited(limiter: SlidingWindowRateLimiter, key: str) -> None:
     wait = limiter.retry_after(key)
     if wait > 0:
         raise HTTPException(
@@ -96,7 +105,7 @@ def limit_by_ip(
     """Builds a FastAPI dependency enforcing `limiter` per client IP."""
 
     async def dependency(request: Request) -> None:
-        _raise_if_limited(limiter, client_ip(request))
+        raise_if_limited(limiter, client_ip(request))
 
     return dependency
 
@@ -105,4 +114,4 @@ async def check_sample_rate_limit(
     auth_record: Annotated[PairingRecord, Depends(get_authenticated_pairing)],
 ) -> None:
     """FastAPI dependency enforcing the sample rate limit per pairing session."""
-    _raise_if_limited(sample_rate_limiter, auth_record.pairing_id)
+    raise_if_limited(sample_rate_limiter, auth_record.pairing_id)

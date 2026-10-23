@@ -34,6 +34,8 @@ import com.notifs.app.data.DownloadRepository
 import com.notifs.app.data.PairingApi
 import com.notifs.app.data.PairingDataStore
 import com.notifs.app.data.PairingInfo
+import com.notifs.app.data.PendingCommand
+import com.notifs.app.service.DownloadCommands
 import com.notifs.app.service.NotifFcmService
 import com.notifs.app.service.NotificationHelper
 import com.notifs.app.ui.QrScannerScreen
@@ -42,6 +44,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -105,7 +108,28 @@ fun HomeScreen(
     var fcmToken by remember { mutableStateOf<String?>("Fetching token...") }
     val pairingInfo by dataStore.pairingInfoFlow.collectAsState(initial = PairingInfo(null, null, null, false))
     val activeDownloads by DownloadRepository.downloadsFlow.collectAsState()
+    val pendingCommands by DownloadRepository.pendingFlow.collectAsState()
+    val commandFailures by DownloadRepository.failuresFlow.collectAsState()
     val isPrivacyOn by dataStore.hideFilenamesFlow.collectAsState(initial = false)
+    var confirmRestart by remember { mutableStateOf<AppDownloadItem?>(null) }
+
+    val sendCommand: (AppDownloadItem, DownloadCommands.Action) -> Unit = { dl, action ->
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                DownloadCommands.dispatch(context.applicationContext, dl.id, action, dl.state)
+            }
+            if (result is DownloadCommands.SendResult.Failed) {
+                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val onCommand: (AppDownloadItem, DownloadCommands.Action) -> Unit = { dl, action ->
+        if (DownloadCommands.needsConfirmation(action, dl.state)) {
+            confirmRestart = dl
+        } else {
+            sendCommand(dl, action)
+        }
+    }
 
     var hasNotifPermission by remember {
         mutableStateOf(
@@ -183,7 +207,7 @@ fun HomeScreen(
                     )
                 }
                 Text(
-                    text = "hmd // android v0.1.0",
+                    text = "hmd // android v0.2.0",
                     color = TextMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -550,7 +574,12 @@ fun HomeScreen(
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             activeDownloads.forEach { dl ->
-                                DownloadItemCard(dl)
+                                DownloadItemCard(
+                                    dl = dl,
+                                    pending = pendingCommands[dl.id]?.takeIf { it.fromState == dl.state },
+                                    failure = commandFailures[dl.id]?.message,
+                                    onCommand = { action -> onCommand(dl, action) }
+                                )
                             }
                         }
                     }
@@ -753,10 +782,52 @@ fun HomeScreen(
             modifier = Modifier.padding(vertical = 8.dp)
         )
     }
+
+    confirmRestart?.let { dl ->
+        AlertDialog(
+            onDismissRequest = { confirmRestart = null },
+            containerColor = BgCard,
+            title = {
+                Text(
+                    text = "restart download?",
+                    color = TextWhite,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            },
+            text = {
+                Text(
+                    text = "\"${dl.filename}\" starts again from 0%. What's downloaded so far is discarded.",
+                    color = TextDim,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRestart = null
+                    sendCommand(dl, DownloadCommands.Action.RESTART)
+                }) {
+                    Text("> restart", color = StateFailed, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRestart = null }) {
+                    Text("cancel", color = TextDim, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-fun DownloadItemCard(dl: AppDownloadItem) {
+fun DownloadItemCard(
+    dl: AppDownloadItem,
+    pending: PendingCommand? = null,
+    failure: String? = null,
+    onCommand: (DownloadCommands.Action) -> Unit = {}
+) {
     val totalKnown = dl.totalBytes != null && dl.totalBytes > 0
     val currentMB = String.format("%.1f", dl.bytesDownloaded / (1024.0 * 1024.0))
     val totalMB = if (totalKnown) String.format("%.1f", dl.totalBytes!! / (1024.0 * 1024.0)) else "?"
@@ -855,6 +926,71 @@ fun DownloadItemCard(dl: AppDownloadItem) {
                     color = GreenNeon,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            // Pause / Resume / Restart, or what's in flight
+            val actions = DownloadCommands.availableActions(dl.state, dl.canResume)
+            if (pending != null) {
+                // Without any answer the server reports expiry first; this is the last resort
+                LaunchedEffect(pending) {
+                    val elapsed = System.currentTimeMillis() - pending.sentAt
+                    delay((DownloadRepository.PENDING_TIMEOUT_MS - elapsed).coerceAtLeast(0L))
+                    DownloadRepository.expirePending()
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = StatePaused,
+                        strokeWidth = 1.5.dp,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Text(
+                        text = "// " + (DownloadCommands.Action.fromWire(pending.action)?.pendingLabel ?: "Sending…").lowercase(),
+                        color = StatePaused,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            } else if (actions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    actions.forEach { action ->
+                        val color = when (action) {
+                            DownloadCommands.Action.PAUSE -> StatePaused
+                            DownloadCommands.Action.RESUME -> GreenNeon
+                            DownloadCommands.Action.RESTART -> PurpleLight
+                        }
+                        OutlinedButton(
+                            onClick = { onCommand(action) },
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, color.copy(alpha = 0.6f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(30.dp)
+                        ) {
+                            Text(
+                                text = "> ${action.wire}",
+                                color = color,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (failure != null) {
+                Text(
+                    text = "// error: $failure",
+                    color = StateFailed,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }

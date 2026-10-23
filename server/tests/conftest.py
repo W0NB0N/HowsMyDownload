@@ -4,10 +4,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from server.commands.queue import CommandQueue
 from server.main import create_app
 from server.notifier.base import BaseNotifier
 from server.rate_limiter import ALL_LIMITERS
-from server.schemas import PushPayload
+from server.schemas import CommandResultEvent, PushPayload
 from server.store.memory import InMemoryPairingStore
 from server.tracker.manager import TrackerManager
 
@@ -19,6 +20,7 @@ class MockNotifier(BaseNotifier):
         self.dispatched: list[PushPayload] = []
         self.target_tokens: list[str | None] = []
         self.unpair_events: list[tuple[str, str]] = []
+        self.command_results: list[tuple[str | None, CommandResultEvent]] = []
 
     async def notify(self, payload: PushPayload, target_token: str | None = None) -> None:
         self.dispatched.append(payload)
@@ -26,6 +28,9 @@ class MockNotifier(BaseNotifier):
 
     async def send_unpair_event(self, token: str, pairing_id: str) -> None:
         self.unpair_events.append((token, pairing_id))
+
+    async def send_command_result(self, token: str | None, event: CommandResultEvent) -> None:
+        self.command_results.append((token, event))
 
 
 @pytest.fixture(autouse=True)
@@ -62,15 +67,22 @@ def tracker_manager(mock_notifier: MockNotifier) -> TrackerManager:
 
 
 @pytest.fixture
+def command_queue() -> CommandQueue:
+    return CommandQueue()
+
+
+@pytest.fixture
 def app(
     mock_notifier: MockNotifier,
     tracker_manager: TrackerManager,
     pairing_store: InMemoryPairingStore,
+    command_queue: CommandQueue,
 ):
     app = create_app()
     app.state.pairing_store = pairing_store
     app.state.notifier = mock_notifier
     app.state.tracker_manager = tracker_manager
+    app.state.command_queue = command_queue
     return app
 
 

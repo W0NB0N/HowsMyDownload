@@ -10,7 +10,7 @@ from firebase_admin import exceptions, messaging
 
 from server.firebase_app import init_firebase
 from server.notifier.base import BaseNotifier
-from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
+from server.schemas import CommandResultEvent, DownloadState, EvaluatedDownloadItem, PushPayload
 from server.store.base import BasePairingStore
 
 logger = logging.getLogger("notifs.notifier.fcm")
@@ -87,6 +87,22 @@ def build_data_payload(
             omitted,
             len(payload.downloads),
         )
+    return data
+
+
+def build_command_result_data(event: CommandResultEvent) -> dict[str, str]:
+    """FCM data map for a command outcome. Carries no `seq`: it is not part of the progress
+    stream, and the phone handles it before the sequence gate."""
+    data = {
+        "event": "command_result",
+        "pairing_id": event.pairing_id,
+        "command_id": event.command_id,
+        "download_id": event.download_id,
+        "action": event.action.value,
+        "ok": "true" if event.ok else "false",
+    }
+    if event.error is not None:
+        data["error"] = event.error.value
     return data
 
 
@@ -200,3 +216,35 @@ class FCMNotifier(BaseNotifier):
             )
         except Exception as e:
             logger.warning("[FCM] Could not send unpair signal to %s: %s", token[:12], e)
+
+    async def send_command_result(self, token: str | None, event: CommandResultEvent) -> None:
+        """Sends a high-priority command outcome (e.g. "PC didn't respond") to the phone."""
+        token = token or self.default_token
+        if not token or not firebase_admin._apps:
+            return
+
+        message = messaging.Message(
+            data=build_command_result_data(event),
+            token=token,
+            android=messaging.AndroidConfig(
+                priority="high",
+                ttl=timedelta(seconds=60),
+            ),
+        )
+        try:
+            msg_id = await asyncio.to_thread(messaging.send, message)
+            logger.info(
+                "[FCM] Command result (%s %s) dispatched to %s... -> MsgId: %s",
+                event.action.value,
+                "ok" if event.ok else event.error,
+                token[:12],
+                msg_id,
+            )
+        except exceptions.FirebaseError as err:
+            if is_dead_token_error(err):
+                await self._purge_pairing(event.pairing_id, token, err)
+            else:
+                logger.error("[FCM] Command result delivery error for %s: %s",
+                             event.pairing_id, err)
+        except Exception as err:
+            logger.error("[FCM] Unexpected error sending command result: %s", err)
