@@ -236,7 +236,7 @@ There is one pending command per download. A newer tap replaces an older one tha
 | `resume` | no-op | `chrome.downloads.resume` | resume if `canResume`, else `not_resumable` | `invalid_state` |
 | `restart` | cancel, then download the original `url` again | same | download the original `url` again | `invalid_state` |
 
-A restart only re-fetches the item's own `http(s)`/`ftp` URL (`blob:`/`data:` → `unsupported_url`). The new download gets a new id. The old entry is erased from Chrome's list and reported once with state `erased`, so the phone drops it instead of showing "failed". Unknown ids → `not_found`; Chrome API errors → `browser_error`. After acting, the extension samples immediately.
+A restart saves to Chrome's default download folder with no "Save as" dialog (`saveAs: false`), since nobody may be at the PC to answer it. It only re-fetches the item's own `http(s)`/`ftp` URL (`blob:`/`data:` → `unsupported_url`). The new download gets a new id. The old entry is erased from Chrome's list and reported once with state `erased`, so the phone drops it instead of showing "failed". Unknown ids → `not_found`; Chrome API errors → `browser_error`. After acting, the extension samples immediately.
 
 ### 5.4 Report result (extension ➔ server)
 `POST /v1/pairings/{pairing_id}/commands/{command_id}/result` with `Authorization: Bearer <extension secret>`:
