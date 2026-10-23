@@ -189,7 +189,7 @@ class NotificationHelper(private val context: Context) {
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_hmd)
             .setColor(BRAND_COLOR)
             .setContentTitle("Couldn't ${action.verb} download")
             .setContentText(message)
@@ -260,7 +260,7 @@ class NotificationHelper(private val context: Context) {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_hmd)
             .setColor(BRAND_COLOR)
             .setContentTitle(displayTitle)
             .setContentText(contentText)
@@ -314,7 +314,7 @@ class NotificationHelper(private val context: Context) {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_hmd)
             .setColor(BRAND_COLOR)
             .setContentTitle(title)
             .setContentText(contentText)
@@ -338,7 +338,7 @@ class NotificationHelper(private val context: Context) {
         val notifId = STALE_NOTIFICATION_ID
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
         val builder = NotificationCompat.Builder(context, CHANNEL_COMPLETIONS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_hmd)
             .setColor(BRAND_COLOR)
             .setContentTitle("PC Offline")
             .setContentText("Transfer stalled — connection lost with $pcName")
@@ -428,7 +428,7 @@ class NotificationHelper(private val context: Context) {
         }
 
         val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_DOWNLOADS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_hmd)
             .setColor(BRAND_COLOR)
             .setContentTitle(summaryTitle)
             .setContentText(subText)
