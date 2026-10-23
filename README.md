@@ -99,7 +99,7 @@ flowchart LR
 | [`android/`](android) | Kotlin + Jetpack Compose app |
 | [`deploy/`](deploy) | Dockerfile, Compose, Nginx, systemd unit, VM setup script, Firestore rules |
 | [`tools/`](tools) | Measurement tools (latency, clock offset, command loop, RTT), benchmark, trace replay, packaging |
-| [`docs/`](docs) | [Protocol](docs/protocol.md), [metrics](docs/metrics.md), [self-hosting](docs/self-hosting.md), [architecture decisions](docs/ADR-0001-architecture.md), [design tokens](docs/design.md), [store listing](docs/store-listing.md) |
+| [`docs/`](docs) | [Protocol](docs/protocol.md), [metrics](docs/metrics.md), [self-hosting](docs/self-hosting.md), [store listing](docs/store-listing.md) |
 
 ## Running it locally
 

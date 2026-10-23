@@ -79,3 +79,8 @@ design-reference/
 # Local signed release builds
 android/app/release/
 phases.txt
+
+# Local-only notes (kept on disk, not published)
+CLAUDE.md
+docs/ADR-0001-architecture.md
+docs/design.md
