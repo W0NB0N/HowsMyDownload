@@ -5,18 +5,46 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
+// Build-time settings, from -P<name>=... or the environment (see docs/self-hosting.md):
+//   hmd.applicationId     / HMD_APPLICATION_ID     package to install as (must match google-services.json)
+//   hmd.defaultServerUrl  / HMD_SERVER_URL         server used when pairing by typed code (QR carries its own)
+//   hmd.keystoreFile, hmd.keystorePassword, hmd.keyAlias, hmd.keyPassword
+//                         / HMD_KEYSTORE_FILE, HMD_KEYSTORE_PASSWORD, HMD_KEY_ALIAS, HMD_KEY_PASSWORD
+fun setting(property: String, env: String): String? =
+    (findProperty(property) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+
+val hmdApplicationId = setting("hmd.applicationId", "HMD_APPLICATION_ID") ?: "com.notifs.app"
+val hmdDefaultServerUrl = setting("hmd.defaultServerUrl", "HMD_SERVER_URL") ?: "https://hmd-api.duckdns.org"
+val hmdKeystoreFile = setting("hmd.keystoreFile", "HMD_KEYSTORE_FILE")
+
 android {
     namespace = "com.notifs.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.notifs.app"
+        applicationId = hmdApplicationId
         minSdk = 26
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0"
 
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"${hmdDefaultServerUrl.trimEnd('/')}\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        // Only when a keystore is configured; otherwise release builds stay unsigned
+        // (Android Studio's "Generate Signed APK" signs them instead).
+        if (hmdKeystoreFile != null) {
+            create("release") {
+                storeFile = file(hmdKeystoreFile)
+                storePassword = setting("hmd.keystorePassword", "HMD_KEYSTORE_PASSWORD")
+                keyAlias = setting("hmd.keyAlias", "HMD_KEY_ALIAS")
+                keyPassword = setting("hmd.keyPassword", "HMD_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -26,6 +54,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hmdKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -37,6 +68,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
