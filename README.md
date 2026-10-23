@@ -99,7 +99,7 @@ flowchart LR
 | [`android/`](android) | Kotlin + Jetpack Compose app |
 | [`deploy/`](deploy) | Dockerfile, Compose, Nginx, systemd unit, VM setup script, Firestore rules |
 | [`tools/`](tools) | Measurement tools (latency, clock offset, command loop, RTT), benchmark, trace replay, packaging |
-| [`docs/`](docs) | [Protocol](docs/protocol.md), [metrics](docs/metrics.md), [self-hosting](docs/self-hosting.md), [releases and deployment](docs/deployment.md), [store listing](docs/store-listing.md) |
+| [`docs/`](docs) | [Protocol](docs/protocol.md), [metrics](docs/metrics.md), [self-hosting](docs/self-hosting.md), [store listing](docs/store-listing.md) |
 
 ## Running it locally
 
@@ -124,7 +124,6 @@ Pushes are tied to the Firebase project the app was built with, so running your 
 - **Release workflow:** [`.github/workflows/release.yml`](.github/workflows/release.yml) builds a signed APK and the extension zip from your repository secrets.
 - **GitHub Releases:** pushing a `vX.Y.Z` tag publishes them as a release.
 - **Server image:** the same tag publishes `ghcr.io/w0nb0n/hows-my-download-server` for amd64 and arm64 ([`server-image.yml`](.github/workflows/server-image.yml)). It contains no secrets, so self-hosters can run it as-is with `docker compose pull`.
-- **Production deploys:** [`deploy.yml`](.github/workflows/deploy.yml) then deploys that image after approval, over an SSH key restricted to a single deploy command. The VM checks `/health` and rolls back on its own if the new version doesn't come up; every deploy is recorded under *Deployments* ([`docs/deployment.md`](docs/deployment.md)).
 
 ## Limitations
 

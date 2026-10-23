@@ -118,19 +118,6 @@ jobs:
       - name: Assemble Debug APK
         run: ./gradlew assembleDebug
 
-  deploy-scripts:
-    name: Deploy scripts (shellcheck + rollback tests)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Lint shell scripts
-        run: shellcheck deploy/hmd-deploy.sh deploy/setup-auto-deploy.sh deploy/tests/test_hmd_deploy.sh
-
-      - name: Test deploy, health check and rollback
-        run: bash deploy/tests/test_hmd_deploy.sh
-
   extension-ci:
     name: Chrome Extension (Manifest V3)
     runs-on: ubuntu-latest

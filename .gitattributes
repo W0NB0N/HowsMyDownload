@@ -1,3 +1,0 @@
-# Shell scripts run on Linux servers and CI: always LF, whatever the checkout platform
-*.sh text eol=lf
-gradlew text eol=lf
