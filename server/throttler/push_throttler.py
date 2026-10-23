@@ -16,7 +16,7 @@ import logging
 import time
 
 from server.notifier.base import BaseNotifier
-from server.schemas import DownloadState, PushPayload
+from server.schemas import DownloadState, PushPayload, utc_now
 
 logger = logging.getLogger("notifs.throttler")
 
@@ -100,6 +100,9 @@ class PushThrottler:
         # Monotonically assign sequence number ONLY upon actual dispatch
         payload.seq = self._next_seq(pairing_id)
         payload.epoch = self.epoch
+        # Stamped at dispatch, not when the sample arrived: a coalesced payload may have waited
+        # up to min_interval_sec, which would otherwise show up as delivery latency on the phone
+        payload.sent_at = utc_now()
 
         self._last_push_times[pairing_id] = time.time()
         self._last_known_states[pairing_id] = {dl.id: dl.state for dl in payload.downloads}

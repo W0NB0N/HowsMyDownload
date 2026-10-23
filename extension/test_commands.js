@@ -95,6 +95,23 @@ test("pause pauses a running download and the phone gets a fresh sample", async 
   assert.deepEqual(results(calls), []);
 });
 
+test("while already polling, a command's outcome is sampled at once, not at the next 2s tick", async () => {
+  const other = running(21); // keeps the poller in its 2s loop
+  const target = running(22);
+  const { calls } = setup([other, target]);
+  const { startPolling } = await import("./background/poller.js");
+  startPolling();
+  await sleep(50);
+  const before = samples(calls).length;
+
+  await handleCommands([command("pause", 22)]);
+  await sleep(300); // debounce is 100 ms; the next interval tick is ~2 s away
+
+  const after = samples(calls).slice(before);
+  assert.ok(after.length >= 1, "expected an immediate sample after the command");
+  assert.equal(after.at(-1).downloads.find(d => d.id === "22").state, "paused");
+});
+
 test("pausing an already paused download is a no-op, not an error", async () => {
   const { chromeState, calls } = setup([running(2, { paused: true })]);
   await handleCommands([command("pause", 2)]);
