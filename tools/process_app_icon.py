@@ -137,7 +137,7 @@ def save_svg(pixels, orig_w, orig_h, out_path):
 
 
 if __name__ == "__main__":
-    orig_w, orig_h, pixels = decode_png("icon.png")
+    orig_w, orig_h, pixels = decode_png("assets/icon.png")
 
     print(f"Decoded {orig_w}x{orig_h} image successfully.")
 

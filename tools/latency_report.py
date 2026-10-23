@@ -1,17 +1,20 @@
 """Summarize server -> phone push latency from Android logcat.
 
 The app logs one line per accepted push:  I HMD_LATENCY: seq=42 latency_ms=187
-(server `sent_at` to phone receipt; both clocks NTP-synced, so expect +-tens of ms of error).
+(server `sent_at` to phone receipt). The two clocks are rarely in sync to within the delivery
+time (a phone 0.5 s behind is common), so measure their offset with tools/clock_offsets.py
+and pass it as --offset-ms; raw values are only trustworthy if `negative` is 0.
 
 Usage:
     adb logcat -c                      # clear, then run a real download for a while
     adb logcat -d -s HMD_LATENCY > latency.log
-    python tools/latency_report.py latency.log
+    python tools/clock_offsets.py https://your-server --adb adb   # -> phone - server offset
+    python tools/latency_report.py latency.log --offset-ms -557
 """
 
+import argparse
 import re
 import statistics
-import sys
 
 LINE = re.compile(r"HMD_LATENCY.*?seq=(\d+)\s+latency_ms=(-?\d+)")
 
@@ -24,8 +27,9 @@ def percentile(sorted_values: list[int], pct: float) -> int:
     return round(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (k - lo))
 
 
-def summarize(lines) -> dict:
-    values = sorted(int(m.group(2)) for line in lines if (m := LINE.search(line)))
+def summarize(lines, offset_ms: int = 0) -> dict:
+    """offset_ms: phone clock minus server clock; subtracted from every raw value."""
+    values = sorted(int(m.group(2)) - offset_ms for line in lines if (m := LINE.search(line)))
     if not values:
         raise SystemExit("No HMD_LATENCY lines found. Is the phone paired and receiving pushes?")
     return {
@@ -41,10 +45,13 @@ def summarize(lines) -> dict:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit(__doc__)
-    with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
-        report = summarize(f)
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("log")
+    parser.add_argument("--offset-ms", type=int, default=0,
+                        help="phone clock minus server clock, from tools/clock_offsets.py")
+    args = parser.parse_args()
+    with open(args.log, encoding="utf-8", errors="replace") as f:
+        report = summarize(f, args.offset_ms)
     for key, value in report.items():
         print(f"{key:>10}: {value}")
 
