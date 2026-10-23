@@ -62,6 +62,8 @@ curl https://your.domain/health                # {"status":"ok",...}
 
 ### Option A: GitHub Actions (no Android tooling needed)
 
+Everything here happens in the browser on **your fork** (the *Fork* button on GitHub), so you don't need to clone anything. Your secrets, builds and releases stay in your fork and never touch the original repository, and the original's secrets are never available to forks. GitHub turns Actions off in new forks: open the fork's *Actions* tab once and click *I understand my workflows, go ahead and enable them*.
+
 The workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds a signed release APK and the extension zip.
 
 **1. Create a signing key once, and keep it safe.** Android only installs an update if it is signed with the same key. Lose the key and you must uninstall and re-pair.
