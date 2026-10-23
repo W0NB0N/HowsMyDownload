@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for phone commands: background/commands.js (execution and validation), the command
  * plumbing in api.js, and the poller's command watch / restart bookkeeping.
  */
@@ -147,7 +147,7 @@ test("restart cancels, re-downloads the original URL and reports the old id as e
 
   assert.deepEqual(chromeState.downloadCalls, [
     ["cancel", 7],
-    ["download", { url: "https://origin.example/get?id=7" }],
+    ["download", { url: "https://origin.example/get?id=7", saveAs: false }],
     ["erase", { id: 7 }]
   ]);
   const reported = samples(calls).flatMap(s => s.downloads);

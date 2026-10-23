@@ -69,7 +69,9 @@ async function restart(item) {
       await chrome.downloads.cancel(item.id);
       cancelled = true;
     }
-    await chrome.downloads.download({ url });
+    // The user is at the phone, not the PC: a "Save as" dialog would leave the download
+    // stuck at 100% until someone picks a folder. Always save to the default directory.
+    await chrome.downloads.download({ url, saveAs: false });
   } catch (err) {
     unmarkRestarted(item.id);
     // A cancelled download that could not be re-started must still show up as failed
