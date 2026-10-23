@@ -21,9 +21,11 @@ const COMMAND_POLL_INTERVAL_MS = 3000;
 const FAST_WATCH_WINDOW_MS = 10 * 60 * 1000;
 const FAILED_WATCH_WINDOW_MS = 60 * 60 * 1000;
 const MAX_RESTARTED_IDS = 100;
+const IMMEDIATE_SAMPLE_DEBOUNCE_MS = 100;
 
 let pollIntervalId = null;
 let commandWatchId = null;
+let immediateSampleTimer = null;
 let lastActiveTimestamp = 0;
 let forceSend = false;
 let recentlyFinishedDownloads = new Map(); // downloadId -> { item, timestamp, reported }
@@ -253,7 +255,20 @@ export async function pollAndSample() {
 }
 
 /**
- * Starts the polling loop and registers keep-alive alarm.
+ * Samples right away instead of at the next 2s tick, merging bursts (e.g. several downloads
+ * paused at once) into one request so a burst can't trip the server's rate limit.
+ */
+function sampleSoon() {
+  if (immediateSampleTimer) return;
+  immediateSampleTimer = setTimeout(() => {
+    immediateSampleTimer = null;
+    pollAndSample();
+  }, IMMEDIATE_SAMPLE_DEBOUNCE_MS);
+}
+
+/**
+ * Starts the polling loop and registers keep-alive alarm. While already polling, a call means
+ * something changed (state change, phone command), so it samples immediately as well.
  */
 export function startPolling() {
   lastActiveTimestamp = Date.now();
@@ -264,6 +279,8 @@ export function startPolling() {
     console.log("[How's My Download] Starting download poller (every 2s).");
     pollAndSample(); // immediate sample
     pollIntervalId = setInterval(pollAndSample, POLL_INTERVAL_MS);
+  } else {
+    sampleSoon();
   }
 
   // Ensure keep-alive alarm is registered (every 1 minute)
