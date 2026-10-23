@@ -1,177 +1,136 @@
-# How's My Download (HMD)
+<p align="center">
+  <img src="extension/icons/icon128.png" width="96" alt="How's My Download icon">
+</p>
 
-[![CI Pipeline](https://github.com/W0NB0N/How-sMyDownload/actions/workflows/ci.yml/badge.svg)](https://github.com/W0NB0N/How-sMyDownload/actions/workflows/ci.yml)
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)
-![Android 14](https://img.shields.io/badge/Android-API%2026%E2%80%9335-3DDC84?logo=android&logoColor=white)
-![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.10-4285F4?logo=jetpackcompose&logoColor=white)
-![Manifest V3](https://img.shields.io/badge/Chrome%20Extension-MV3-orange?logo=googlechrome&logoColor=white)
-![Security](https://img.shields.io/badge/Security-AES--256--GCM-8a05ff)
-![License](https://img.shields.io/badge/license-MIT-green)
+<h1 align="center">How's My Download</h1>
 
-> **Real-time browser download telemetry mirrored to your mobile notification shade with zero-knowledge field-level encryption, sub-second latency, and adaptive push coalescing.**
+<p align="center">
+  Your Chrome downloads, live on your Android phone: progress, speed and ETA in the notification shade,<br>
+  with <b>Pause / Resume / Restart</b> buttons that act on the PC. Filenames are end-to-end encrypted.
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/W0NB0N/HowsMyDownload/actions/workflows/ci.yml"><img src="https://github.com/W0NB0N/HowsMyDownload/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin / Compose">
+  <img src="https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white" alt="Chrome MV3">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+</p>
 
-## ⚡ The Problem & The Solution
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/images/notification-downloading.png" width="300" alt="Progress notification with speed, ETA and a Pause button"><br><sub>Live progress, speed and ETA</sub></td>
+    <td align="center"><img src="docs/images/notification-states.png" width="300" alt="Paused download with Resume and Restart, a running download, and completed downloads"><br><sub>Paused, running and completed</sub></td>
+    <td align="center"><img src="docs/images/app.png" width="230" alt="The Android app listing two downloads with pause and restart buttons"><br><sub>The app</sub></td>
+  </tr>
+</table>
 
-**The Problem**: You start downloading a 50GB game update, a Linux ISO, or a large dataset, and walk away from your desk. Checking download progress requires returning to your computer, remote desktop software, or maintaining battery-draining continuous screen-on sessions.
+## Why
 
-**The Solution**: **How's My Download** bridges Chrome's native download manager to Android's notification shade using Firebase Cloud Messaging (FCM). Live progress bars, transfer speeds, and ETAs appear on your lock screen and update every 2 seconds — while **end-to-end field-level AES-256-GCM encryption** ensures the server never sees your filenames.
+Large downloads (an OS image, a game update, a dataset) take long enough that you walk away, and then you keep walking back to check. How's My Download mirrors Chrome's download manager onto your phone and lets you act on it from there.
 
----
+## Measured, not estimated
 
-## 🏗️ System Architecture
+Measured on 24 Oct 2026 against the production server (Oracle Cloud, India) with a POCO M4 Pro on 4G. Methods, raw data and caveats are in [`docs/metrics.md`](docs/metrics.md).
+
+| | Median | Spread |
+|---|---|---|
+| Server → phone push (386 pushes, clock-offset corrected) | **448 ms** | p95 680 ms, p99 782 ms |
+| Tap **Pause** on the phone → Chrome paused → phone shows PAUSED | **1.8 s** | 1.4–2.2 s |
+| Tap → "Pausing…" feedback | **219 ms** | 181–255 ms |
+| Server handling per sample (in-process) | **1.5 ms** | p95 1.9 ms |
+
+Measuring found a real bug. The pause round trip was first **4.1 s**: an extension state change waited for the next 2 s poll tick. The fix halved it, and a regression test now guards it.
+
+## How it works
 
 ```mermaid
-flowchart TD
-    subgraph ClientPC["Desktop PC / Browser"]
-        Chrome["Chrome Downloads API"] -->|Poll 2s| Poller["Extension Poller\n(Single-Report Pause Engine)"]
-        Crypto["Web Crypto API\n(AES-256-GCM)"] -->|Encrypts Filenames| API["API Client\n(Exponential Backoff)"]
-        Poller --> Crypto
-        UI_Pop["Popup UI (Render Dark)\n(Live Monitor & QR Generator)"] -->|Displays QR with AES Key| Canvas["Offline Canvas QR"]
+flowchart LR
+    subgraph PC["PC: Chrome extension (MV3)"]
+        Poller["Poller<br/>chrome.downloads every 2 s"] --> Enc["AES-256-GCM<br/>encrypt filenames"]
+        Cmd["Command executor<br/>pause · resume · restart"]
     end
-
-    subgraph CloudInfra["Oracle Cloud Production VM (Ubuntu 24.04 LTS)"]
-        Nginx["Nginx Reverse Proxy\n(Per-IP Rate Limit 5r/s + SSL)"] --> Uvicorn["Docker (Python 3.12)\nFastAPI Application"]
-        Uvicorn -->|Auth & Validation| Router["Ingress Router\n(Max 50KB Payload Guard)"]
-        Router --> RateLimit["Sliding Window Rate Limiter\n(10 samples / 10s per pairing)"]
-        RateLimit --> Throttler["Push Throttler Engine\n(Queue Coalescing & State Bypass)"]
-        Throttler --> Calc["Speed Smoother (EMA)\n& ETA Calculator"]
-        Calc --> FcmNotifier["FCM Data Notifier\n(Auto-Purge Invalid Tokens)"]
+    subgraph Server["Server: FastAPI on Oracle Cloud"]
+        API["/v1/samples<br/>auth · validation"] --> Track["Tracker<br/>EMA speed · ETA"] --> Throttle["Throttler<br/>≤1 push / 2 s, state changes bypass"]
+        Queue["Command queue<br/>75 s TTL"]
     end
-
-    subgraph MobileDevice["Android Mobile Device (API 26+)"]
-        Camera["CameraX + ML Kit"] -->|Scans QR (Imports AES Key)| DataStore["App-private DataStore\n(Key + Device Secret, backup disabled)"]
-        FCM_Service["NotifFcmService\n(FirebaseMessagingService)"] --> Dropper["Strict Sequence Dropper\n(seq <= lastSeq)"]
-        Dropper --> LocalCrypto["CryptoUtils (AES-256-GCM)\n(Local Filename Decryptor)"]
-        LocalCrypto --> NotifHelper["NotificationHelper\n(downloads_v3 IMPORTANCE_LOW)"]
-        NotifHelper --> Shade["Android Notification Shade\n(Determinate Progress, Speed & ETA)"]
-        Shade --> Watchdog["90s Local Safety Net\n(Alerts if PC goes offline)"]
+    subgraph Phone["Android app (Kotlin, Compose)"]
+        FCMsvc["FCM service<br/>epoch + seq ordering"] --> Dec["Decrypt filename"] --> Notif["Notifications<br/>+ buttons"]
+        Notif -- tap --> Send["Send command"]
     end
-
-    API -->|POST /v1/samples (TLS + Bearer)| Nginx
-    Canvas -.->|Optical Offline Link\n(AES Key never hits server)| Camera
-    FcmNotifier -->|High-Priority Data Message| FCM_Service
+    Enc -- "HTTPS + bearer secret" --> API
+    Throttle -- "FCM high-priority data" --> FCMsvc
+    Send -- "HTTPS + device secret" --> Queue
+    Queue -- "returned with the next sample" --> Cmd
+    PC -. "pairing QR code carries the AES key<br/>(never sent to the server)" .-> Phone
 ```
 
----
+1. **Pairing.** The extension asks the server for a pairing code and shows a QR code with the server URL, the code and a fresh **AES-256 key**. The phone scans it and claims the code with its FCM token. The key travels only through the camera; the server never has it.
+2. **Progress.** While a download runs, the extension sends a sample every 2 s with the filename encrypted. The server smooths speed (EMA), computes the ETA, and pushes an FCM data message, throttled to one every 2 s; state changes push immediately. The app decrypts the name and updates one notification per download.
+3. **Commands.** A tap on Pause posts a command to the server, which queues it. The extension picks it up from the response to its next sample (or a light poll when nothing is transferring), applies it through `chrome.downloads`, and samples at once so the phone sees the result. Failures ("Chrome can't resume this one", "PC didn't respond") come back as a push with a plain reason.
 
-## 🔒 Zero-Knowledge Security Model
+## Engineering highlights
 
-Unlike traditional notification relays that transmit user download histories in plaintext to cloud servers, HMD implements a **Zero-Knowledge Field-Level Encryption** protocol:
+- **End-to-end encrypted filenames.**
+  - Filenames and MIME types are encrypted with AES-256-GCM on the PC (`enc:v1:<iv>:<ciphertext>`). Encryption **fails closed**: an unencryptable sample is dropped, never sent in plaintext.
+  - A cross-language test checks that Kotlin decrypts what the extension's Web Crypto code produced (`CryptoUtilsTest`).
+  - On the phone, the key and the device secret are wrapped with an Android Keystore key.
+- **Two credentials per pairing.** The extension and the phone each hold their own 256-bit bearer secret, stored server-side as SHA-256 hashes. Only the phone can redirect pushes or send commands; only the extension can collect them. An unknown pairing and a wrong secret both return `401`, so IDs can't be probed.
+- **Ordering across restarts.** FCM may reorder messages, and the server's sequence counter resets on restart. Every push carries `(epoch, seq)`. The phone compares `seq` only within one server boot epoch ([`SequenceGate.kt`](android/app/src/main/java/com/notifs/app/service/SequenceGate.kt)).
+- **Throttling without lag.** Bursts are coalesced into at most one push per 2 s per pairing, while state changes bypass the window. FCM sends happen outside locks, under a per-pairing FIFO, so one slow push never stalls another user. Payloads are packed by priority into a 3.5 KB budget under FCM's 4 KB cap.
+- **Remote control with feedback.**
+  - Each download has at most one pending command, and a newer tap replaces it. Delivery is at-most-once, with a 75 s expiry that tells the phone "PC didn't respond".
+  - Error codes come from a fixed list, so no free text from the PC reaches the phone.
+  - Restart re-downloads the original URL without a Save-As dialog on the PC, and reports the old entry as erased.
+- **"PC offline" that survives process death.** An `AlarmManager` watchdog, re-armed by every push, alerts after 90 s of silence even if Android has killed the app. It doesn't rely on in-memory state or visible notifications.
+- **Tested across three languages.**
+  - Server: pytest (128 tests, 83% coverage) plus a Firestore emulator suite for the transactional claim.
+  - Extension: 41 Node tests that run the real modules against a `chrome.*` fake.
+  - Android: 33 JUnit tests.
+  - All of it runs in CI on every push.
 
-1. **Optical Key Handshake**: When generating a pairing QR code, the Chrome extension generates a random 256-bit AES key using the Web Crypto API (`crypto.getRandomValues`). This key is embedded **exclusively** into the visual QR code payload.
-2. **Server Zero-Knowledge**: The encryption key is **never transmitted** in the HTTP handshake to `/v1/pairings` or `/v1/pairings/{code}/claim`. The server has no mathematical capability to decrypt filenames.
-3. **Field-Level AES-GCM**: Before dispatching download metrics to the server, the extension encrypts the filename into an authenticated ciphertext string (`enc:v1:<iv>:<ciphertext>`). The server only parses byte progress, speeds, and state transitions.
-4. **Local Mobile Decryption**: Upon receiving the high-priority FCM data packet, the Android app extracts the AES key from its local secure DataStore and decrypts the filename on the device.
-5. **Fail-Closed Encryption**: If the extension is paired but has no valid key, or encryption fails, the sample is dropped. A filename is never sent in plaintext. `mime_type` is encrypted too, and the phone shows "Encrypted file" for anything it cannot authenticate.
-6. **Separate Credentials per Side**: The extension and the phone each hold their own 256-bit bearer secret, stored server-side only as a SHA-256 hash. Only the phone can change where its pushes go (FCM token refresh). Either side can unpair. Unknown pairings and wrong secrets both return `401`, so pairing IDs can't be probed.
-7. **Instant Secret Rotation**: The extension's secret can be rotated with one click. The old secret is rejected immediately with `HTTP 401`, and the phone's pairing is unaffected.
+## Repository
 
-**What the server still sees**: byte counts, download states, timing, and the PC name. Only user content (file names and types) is encrypted.
+| Path | Contents |
+|---|---|
+| [`server/`](server) | FastAPI app: ingest, pairing, commands, tracker, throttler, FCM notifier, Firestore and in-memory stores |
+| [`extension/`](extension) | Chrome MV3 extension, plain ES modules, no build step, no dependencies |
+| [`android/`](android) | Kotlin + Jetpack Compose app |
+| [`deploy/`](deploy) | Dockerfile, Compose, Nginx, systemd unit, VM setup script, Firestore rules |
+| [`tools/`](tools) | Measurement tools (latency, clock offset, command loop, RTT), benchmark, trace replay, packaging |
+| [`docs/`](docs) | [Protocol](docs/protocol.md), [metrics](docs/metrics.md), [self-hosting](docs/self-hosting.md), [architecture decisions](docs/ADR-0001-architecture.md), [design tokens](docs/design.md), [store listing](docs/store-listing.md) |
 
----
-
-## 🚀 Key Engineering Highlights
-
-### 1. Adaptive Push Coalescing & State Bypass
-Every push wakes the phone, so the server caps progress pushes per pairing while keeping state changes instant. HMD's **Push Throttler** (`server/throttler/push_throttler.py`) applies:
-- **Queue Coalescing**: Samples inside the 2.0-second throttle window replace earlier ones, so a burst (several downloads, reconnect retries) becomes at most one push per window.
-- **State-Change Bypass**: Any state transition (`starting` $\rightarrow$ `downloading` $\rightarrow$ `paused` $\rightarrow$ `completed` $\rightarrow$ `failed`) or download addition/removal skips the throttle window.
-- **Single-Report Pause Poller**: When a transfer pauses, the extension reports the status once and stops polling until the status changes.
-- **No sends under locks**: State is updated under a lock, but FCM calls happen outside it, so one slow push never stalls other users.
-
-### 2. Ordering, Restarts & the "PC Offline" Safety Net
-- **Out-of-Order Rejection**: FCM can deliver out of order. Each push carries `(epoch, seq)`: a strictly increasing sequence number plus the server's boot time. The phone drops stale or duplicate pushes within one epoch and treats a new epoch (server restart) as a fresh stream (`SequenceGate.kt`).
-- **4 KB budget**: FCM data messages are capped at 4 KB. The server packs downloads by priority into a 3.5 KB budget and reports anything it had to leave out.
-- **Process-death-proof watchdog**: If a laptop lid closes or Wi-Fi drops mid-download, an `AlarmManager` alarm (re-armed by every update) alerts **"PC Offline — Transfer stalled"** after 90 s, even if Android has killed the app. `setTimeoutAfter` is a system-enforced backstop that removes orphaned progress bars.
-
-### 3. Content-Level Privacy Guard
-A native switch in the Android Compose UI (`--privacy [ hide_filenames ]`) redacts filenames at the content level across all notification channels. Filenames appear only inside the app, while shade notifications display sanitized status lines (`Downloading… • 45.2% • 8.4 MB/s`).
-
-### 4. Remote Control: Pause, Resume, Restart
-Notification buttons and in-app controls send commands back to the PC. The server queues them, and the extension collects them on its sample responses while a transfer is running (~2 s), or by a light poll while something is paused or recently failed. Restart re-downloads the original URL and drops the old entry. Failures (not resumable, PC asleep and the command expired) come back to the phone as a push with a plain reason. See [protocol §5](docs/protocol.md#5-download-commands-phone--server--extension).
-
----
-
-## 📊 Benchmarks
-
-| Metric | Value | Source |
-|---|---|---|
-| **Server handling time per sample** | **1.5 ms p50 / 1.9 ms p95** | `tools/bench_server.py` (in-process, laptop) |
-| **Single-worker throughput** | **~630 samples/s** | same |
-| **FCM payload, one download** | **~360 B** of the 4 KB limit | same |
-| **Progress pushes per pairing** | **≤ 1 per 2 s** (state changes immediate) | by design: `push_throttler.py` |
-| **Server test coverage** | **82%** of server code (Firestore store covered by a separate emulator suite) | `pytest --cov` in CI |
-| **Server → phone latency** | *measure on your device* | `adb logcat -s HMD_LATENCY` → `tools/latency_report.py` |
-
-*Methods, environment details, and what hasn't been measured yet are in [`docs/metrics.md`](docs/metrics.md).*
-
----
-
-## 🛠️ Tech Stack
-
-| Component | Technology | Rationale |
-|---|---|---|
-| **Extension** | JavaScript (ES Modules, Manifest V3) | Native Chrome Downloads API, Web Crypto AES-256-GCM, zero external dependencies |
-| **Backend** | Python 3.12, FastAPI, Pydantic v2, Uvicorn | Async ASGI concurrency, strict schema validation, low memory overhead |
-| **Mobile App** | Kotlin 2.0, Jetpack Compose, Material 3 | Declarative reactive UI, CameraX barcode scanning, Preferences DataStore |
-| **Push Transport**| Firebase Cloud Messaging (FCM HTTP v1) | High-priority data delivery without persistent background battery drain |
-| **Infrastructure**| Docker, Nginx, Let's Encrypt, Oracle Cloud | Production reverse proxy, TLS termination, sliding window rate limiting |
-| **Testing & CI** | Pytest (+ Firestore emulator), Ruff, JUnit 4, Node:Test, GitHub Actions | All three clients tested in CI; extension tests run the real modules against a `chrome.*` fake; a cross-language test checks that Kotlin decrypts the extension's Web Crypto output |
-
----
-
-## 💻 Quick Start & Development
-
-### 1. Backend Server Setup
+## Running it locally
 
 ```bash
-# Clone the repository
-git clone https://github.com/W0NB0N/How-sMyDownload.git
-cd How-sMyDownload
-
-# Setup Python virtual environment
-uv venv .venv
-source .venv/bin/activate  # Or on Windows: .venv\Scripts\activate
-
-# Install with development dependencies
+# Server (Python 3.12): console notifier and in-memory store by default
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e "./server[dev]"
+uvicorn server.main:app --reload --port 8000
 
-# Run test suite and linter
-ruff check server
-pytest server/tests
-
-# Launch local development server
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+# Tests (from the repository root)
+(cd server && ruff check . && pytest --cov)
+(cd extension && node --test test_poller.js test_crypto.js test_api.js test_commands.js)
+(cd android && ./gradlew testDebugUnitTest assembleDebug)   # needs android/app/google-services.json
 ```
 
-### 2. Chrome Extension Sideloading
+- **Extension:** open `chrome://extensions`, enable *Developer mode*, choose *Load unpacked* → `extension/`, set the server URL in the popup, and click *pair device*.
+- **Without a phone:** replay a recorded download with `python tools/sample_replay.py tools/sample_traces/ubuntu_download_trace.json`. The server's console notifier prints each push with speed and ETA.
 
-1. Open Google Chrome and navigate to `chrome://extensions`.
-2. Toggle **Developer mode** in the top-right corner.
-3. Click **Load unpacked** and select the [`extension/`](extension/) directory.
-4. Click the HMD icon in the toolbar, enter your backend URL (e.g., `http://localhost:8000`), and click **Pair Device**.
+## Self-hosting and releases
 
-### 3. Android Client Installation
+Pushes are tied to the Firebase project the app was built with, so running your own server means using your own Firebase project and your own build of the app. [`docs/self-hosting.md`](docs/self-hosting.md) covers it end to end:
+- **Release workflow:** [`.github/workflows/release.yml`](.github/workflows/release.yml) builds a signed APK and the extension zip from your repository secrets.
+- **GitHub Releases:** pushing a `vX.Y.Z` tag publishes them as a release.
 
-1. Open [`android/`](android/) in **Android Studio Ladybug (2024.2+)** or later.
-2. Add your Firebase `google-services.json` to [`android/app/`](android/app/).
-3. Connect your Android device via USB / WiFi debugging.
-4. Run `./gradlew assembleDebug` or install directly with `./gradlew installDebug`.
-5. Open the app and tap **Scan QR Code** to pair with your browser.
+## Limitations
 
----
+- Chrome on the PC and Android on the phone only; delivery needs Google Play Services (FCM).
+- Pending commands and push sequencing live in server memory, so the server runs as a single worker, and a restart drops queued commands.
+- Restart can't re-create downloads that came from a form POST or a `blob:` URL.
+- Phone battery cost hasn't been measured yet ([how to](docs/metrics.md#4-not-yet-measured)).
 
-## 📦 Production Deployment & Packaging
+## License
 
-- **Oracle Cloud VM Setup**: Full automated provisioning script and deployment guide in [`deploy/docs/oracle-deploy.md`](deploy/docs/oracle-deploy.md).
-- **Chrome Web Store Packaging**: Package a production-ready `.zip` archive via `python tools/package_extension.py` (Listing details in [`docs/store-listing.md`](docs/store-listing.md)).
-- **Protocol Documentation**: Full Schema v1 specifications in [`docs/protocol.md`](docs/protocol.md).
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. See `LICENSE` for more information.
+[MIT](LICENSE)

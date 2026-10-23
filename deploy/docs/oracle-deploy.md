@@ -260,27 +260,27 @@ sudo ./deploy/oracle-setup.sh
 ## 4. Connecting Clients to Production
 
 ### 1. Chrome Extension
-1. Open the Chrome Extension popup.
-2. Click **Server Settings** (or the gear icon).
-3. Set **Server URL** to: `https://notifs.yourdomain.com`.
-4. Click **Pair New Device** to generate a QR code with the production server URL.
+1. Open the extension popup.
+2. Set `--server URL` to `https://notifs.yourdomain.com`.
+3. Click **pair device** to show a QR code carrying the server URL and the encryption key.
 
 ### 2. Android App
-1. Open the Download Notifs Android app.
-2. Tap **Pair Device** (or the camera scan icon).
-3. Scan the QR code displayed on the Chrome Extension.
-4. Once paired, the app registers its FCM device token with the production backend.
-5. All download progress notifications will now stream over FCM, regardless of whether the phone and desktop are on the same Wi-Fi network.
+The app must be built from the same Firebase project as the server's `service-account.json`. See [`docs/self-hosting.md`](../../docs/self-hosting.md#3-build-the-android-app).
+1. Open the How's My Download app.
+2. Tap **> scan qr code** and scan the code shown by the extension.
+3. Once paired, the app registers its FCM token with the server. Progress now arrives over FCM on any network, including mobile data.
 
 ---
 
 ## 5. Maintenance & Operational Commands
 
 ### Updating Backend Code
+`oracle-setup.sh` copies the code into `/opt/notifs` (it is not a git checkout), so pull in your clone and copy again. `.env`, `service-account.json` and the live Nginx config are not tracked by git and are left untouched.
 ```bash
-cd /opt/notifs
-git pull origin master
-sudo docker compose -f deploy/docker-compose.yml build
+cd ~/notifs && git pull origin master
+sudo cp -r server deploy /opt/notifs/
+cd /opt/notifs/deploy
+sudo docker compose build notifs-api
 sudo docker image prune -f
 sudo systemctl restart notifs-api.service
 ```

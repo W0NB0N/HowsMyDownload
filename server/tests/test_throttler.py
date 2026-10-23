@@ -199,3 +199,20 @@ async def test_throttler_forget_clears_pairing_state(mock_notifier: MockNotifier
     assert throttler.get_seq("pair-f") == 0
     assert "pair-f" not in throttler._pending_payloads
     assert "pair-f" not in throttler._flush_tasks
+
+
+@pytest.mark.asyncio
+async def test_coalesced_push_is_stamped_at_dispatch_not_arrival(mock_notifier: MockNotifier):
+    throttler = PushThrottler(notifier=mock_notifier, min_interval_sec=0.3)
+    await throttler.submit(make_payload("pair-t", [("d1", DownloadState.DOWNLOADING, 100)]))
+
+    # Same state inside the window: held back and flushed when the window ends
+    held = make_payload("pair-t", [("d1", DownloadState.DOWNLOADING, 200)])
+    arrived_at = held.sent_at
+    await throttler.submit(held)
+    await asyncio.sleep(0.45)
+
+    assert len(mock_notifier.dispatched) == 2
+    waited = (mock_notifier.dispatched[1].sent_at - arrived_at).total_seconds()
+    # The phone measures latency from sent_at; the throttle wait must not be counted
+    assert waited >= 0.2
