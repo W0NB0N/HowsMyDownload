@@ -50,9 +50,12 @@ sudo chmod 600 /opt/notifs/deploy/service-account.json
 sudo certbot certonly --webroot -w /var/www/certbot -d your.domain
 # replace notifs.yourdomain.com with your domain in /opt/notifs/deploy/nginx.conf, then:
 sudo cp /opt/notifs/deploy/nginx.conf /etc/nginx/sites-available/notifs.conf && sudo systemctl reload nginx
+cd /opt/notifs/deploy && sudo docker compose pull   # prebuilt image, amd64 + arm64
 sudo systemctl restart notifs-api.service
 curl https://your.domain/health                # {"status":"ok",...}
 ```
+
+**The server image is prebuilt.** `docker compose pull` fetches `ghcr.io/w0nb0n/hows-my-download-server` from GitHub's container registry, built for both x86 and ARM (Oracle's free VMs are ARM). Unlike the app, the image holds nothing project-specific: your Firebase key is mounted into it at runtime. So you can use it as-is, without a fork. To pin a release, set `HMD_IMAGE=ghcr.io/w0nb0n/hows-my-download-server:0.2.0` in `/opt/notifs/deploy/.env`. To run modified server code, `sudo docker compose build` builds from source under the same name.
 
 `/opt/notifs/deploy/.env` must have `STORE_TYPE=firestore` and `NOTIFIER_TYPE=fcm` (the defaults written by the setup script). The server must run as **one** Uvicorn worker, as the Dockerfile does. Tracking, push ordering, rate limits and the command queue live in process memory.
 
@@ -135,13 +138,18 @@ Start a large download in Chrome. Within a few seconds the phone should show a p
 
 ## 6. Updating
 
-- **Server**: the setup script copies the code to `/opt/notifs`, so pull in your clone and copy again:
+- **Server (prebuilt image)**: pull the newer image and restart:
+  ```bash
+  cd /opt/notifs/deploy && sudo docker compose pull && sudo systemctl restart notifs-api.service
+  ```
+  If you pinned `HMD_IMAGE` to a version, change the version in `.env` first. When a release changes deploy files (Compose, Nginx), also refresh them: `cd ~/notifs && git pull && sudo cp -r deploy /opt/notifs/`.
+- **Server (built from source)**: the setup script copies the code to `/opt/notifs`, so pull in your clone and copy again:
   ```bash
   cd ~/notifs && git pull
   sudo cp -r server deploy /opt/notifs/
   cd /opt/notifs/deploy && sudo docker compose build notifs-api && sudo systemctl restart notifs-api.service
   ```
-  Your `.env`, `service-account.json` and the live Nginx config are not part of the repository, so this leaves them alone.
+  Your `.env`, `service-account.json` and the live Nginx config are not part of the repository, so either way leaves them alone.
 - **App**: bump `versionCode`/`versionName` in `android/app/build.gradle.kts`, run the workflow again with the **same keystore** secret, and install over the old version. Pairings survive.
 - **Extension**: replace the folder or zip and click *Reload* in `chrome://extensions`.
 

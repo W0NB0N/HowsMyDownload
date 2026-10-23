@@ -1,5 +1,9 @@
 services:
   notifs-api:
+    # Published image (amd64 + arm64): `docker compose pull` to update. Pin a version by
+    # setting HMD_IMAGE=ghcr.io/<owner>/hows-my-download-server:0.2.0 in deploy/.env.
+    # `docker compose build` still builds from source instead, under the same name.
+    image: ${HMD_IMAGE:-ghcr.io/w0nb0n/hows-my-download-server:latest}
     build:
       context: ..
       dockerfile: deploy/Dockerfile

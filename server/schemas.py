@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from server import __version__
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -120,7 +122,7 @@ class PushPayload(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-    version: str = "0.1.0"
+    version: str = __version__
     timestamp: datetime = Field(default_factory=utc_now)
 
 

@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from server import __version__
 from server.tests.conftest import MockNotifier
 
 
@@ -10,7 +11,7 @@ def test_health_endpoint(client: TestClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert data["version"] == "0.1.0"
+    assert data["version"] == __version__
 
 
 def test_post_valid_sample(client: TestClient, mock_notifier: MockNotifier):

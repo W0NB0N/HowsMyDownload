@@ -123,6 +123,7 @@ uvicorn server.main:app --reload --port 8000
 Pushes are tied to the Firebase project the app was built with, so running your own server means using your own Firebase project and your own build of the app. [`docs/self-hosting.md`](docs/self-hosting.md) covers it end to end:
 - **Release workflow:** [`.github/workflows/release.yml`](.github/workflows/release.yml) builds a signed APK and the extension zip from your repository secrets.
 - **GitHub Releases:** pushing a `vX.Y.Z` tag publishes them as a release.
+- **Server image:** the same tag publishes `ghcr.io/w0nb0n/hows-my-download-server` for amd64 and arm64 ([`server-image.yml`](.github/workflows/server-image.yml)). It contains no secrets, so self-hosters can run it as-is with `docker compose pull`.
 
 ## Limitations
 

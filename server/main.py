@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from server import __version__
 from server.api.commands import router as commands_router
 from server.api.commands import run_expiry_sweeper
 from server.api.health import router as health_router
@@ -180,7 +181,7 @@ def create_app() -> FastAPI:
     """Creates and configures the FastAPI instance."""
     app = FastAPI(
         title="How's My Download Backend",
-        version="0.1.0",
+        version=__version__,
         description="FastAPI service mirroring PC download progress to mobile notifications.",
         lifespan=lifespan,
     )
