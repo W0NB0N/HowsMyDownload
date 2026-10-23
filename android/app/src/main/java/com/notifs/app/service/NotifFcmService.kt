@@ -91,6 +91,13 @@ class NotifFcmService : FirebaseMessagingService() {
             return
         }
 
+        // Outcome of a pause/resume/restart sent from this phone. Not part of the progress
+        // stream (no seq), so it must be handled before the sequence gate.
+        if (data["event"] == "command_result") {
+            handleCommandResult(data)
+            return
+        }
+
         val seq = data["seq"]?.toIntOrNull() ?: 0
         val epoch = data["epoch"]?.toLongOrNull() ?: 0L
         // >0 when the server trimmed the list to fit FCM's 4KB limit
@@ -124,6 +131,7 @@ class NotifFcmService : FirebaseMessagingService() {
                 val encKey = dataStore.getEncryptionKey()
                 val jsonArray = JSONArray(downloadsJsonStr)
                 val uiDownloads = mutableListOf<com.notifs.app.data.AppDownloadItem>()
+                val erasedIds = mutableSetOf<String>()
 
                 data class ActiveCandidate(
                     val id: String,
@@ -161,6 +169,7 @@ class NotifFcmService : FirebaseMessagingService() {
                     } else {
                         null
                     }
+                    val canResume = item.optBoolean("can_resume", false)
 
                     if (state != "erased") {
                         uiDownloads.add(
@@ -172,9 +181,12 @@ class NotifFcmService : FirebaseMessagingService() {
                                 totalBytes = totalBytes,
                                 percentage = pct,
                                 speedBytesSec = speed,
-                                etaSeconds = eta
+                                etaSeconds = eta,
+                                canResume = canResume
                             )
                         )
+                    } else {
+                        erasedIds.add(id)
                     }
 
                     when (state) {
@@ -200,7 +212,8 @@ class NotifFcmService : FirebaseMessagingService() {
                                     success = false,
                                     source = source,
                                     pcName = pcName,
-                                    hideFilenames = hideFilenames
+                                    hideFilenames = hideFilenames,
+                                    canResume = canResume
                                 )
                             }
                         }
@@ -280,7 +293,9 @@ class NotifFcmService : FirebaseMessagingService() {
                         source = source,
                         pcName = pcName,
                         hideFilenames = hideFilenames,
-                        state = active.state
+                        state = active.state,
+                        pendingAction = com.notifs.app.data.DownloadRepository.pendingFor(active.id, active.state)
+                            ?.let { DownloadCommands.Action.fromWire(it.action) }
                     )
                 }
 
@@ -294,14 +309,35 @@ class NotifFcmService : FirebaseMessagingService() {
                     StaleWatchdog.disarm(applicationContext)
                 }
 
-                // Update active downloads for UI
-                com.notifs.app.data.DownloadRepository.updateDownloads(uiDownloads)
+                // Update active downloads for UI (also settles pending commands)
+                com.notifs.app.data.DownloadRepository.applyPush(uiDownloads, erasedIds)
 
             } catch (e: Exception) {
                 // Never log the payload: it carries (encrypted) filenames and pairing metadata
                 Log.e(TAG, "Error processing downloads payload (seq=$seq)", e)
             }
         } }
+    }
+
+    /**
+     * A command failed on the PC, or the PC never collected it. Success is not pushed: the
+     * extension samples right after acting, so the new state arrives as a normal update.
+     */
+    private fun handleCommandResult(data: Map<String, String>) {
+        if (data["ok"] == "true") return
+        val downloadId = data["download_id"] ?: return
+        val action = DownloadCommands.Action.fromWire(data["action"]) ?: return
+        runBlocking(Dispatchers.IO) {
+            val currentId = dataStore.getPairingInfo().pairingId
+            if (currentId.isNullOrBlank() || data["pairing_id"] != currentId) {
+                Log.d(TAG, "Ignoring command result for another pairing")
+                return@runBlocking
+            }
+            val message = DownloadCommands.errorMessage(data["error"], action)
+            Log.w(TAG, "Command ${action.wire} for download $downloadId failed: ${data["error"]}")
+            com.notifs.app.data.DownloadRepository.commandFailed(downloadId, message)
+            notificationHelper.markCommandFailed(downloadId, action, message)
+        }
     }
 
     /**

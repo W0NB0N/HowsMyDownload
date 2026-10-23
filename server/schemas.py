@@ -58,6 +58,10 @@ class SourceDownloadItem(BaseModel):
     )
     state: DownloadState = Field(..., description="Current download lifecycle state")
     mime_type: str | None = Field(default=None, max_length=256, description="MIME type")
+    can_resume: bool | None = Field(
+        default=None,
+        description="For failed downloads: the browser can resume it without starting over",
+    )
 
 
 class SamplePayload(BaseModel):
@@ -96,6 +100,7 @@ class EvaluatedDownloadItem(BaseModel):
     bytes_downloaded: int = Field(..., ge=0)
     total_bytes: int | None = Field(default=None, ge=0)
     mime_type: str | None = None
+    can_resume: bool | None = None
 
 
 class PushPayload(BaseModel):
@@ -119,10 +124,79 @@ class HealthResponse(BaseModel):
     timestamp: datetime = Field(default_factory=utc_now)
 
 
+class CommandAction(StrEnum):
+    PAUSE = "pause"
+    RESUME = "resume"
+    RESTART = "restart"
+
+
+class CommandErrorCode(StrEnum):
+    """Why a command failed. A fixed set, so nothing free-form ever reaches the phone."""
+    NOT_FOUND = "not_found"
+    INVALID_STATE = "invalid_state"
+    NOT_RESUMABLE = "not_resumable"
+    UNSUPPORTED_URL = "unsupported_url"
+    BROWSER_ERROR = "browser_error"
+    # Server-generated: the PC did not pick the command up before it expired
+    EXPIRED = "expired"
+
+
+# Source download IDs as they appear in samples (Chrome uses integers)
+DOWNLOAD_ID_PATTERN = r"^[A-Za-z0-9_-]{1,128}$"
+COMMAND_ID_PATTERN = r"^[0-9a-f]{32}$"
+
+
+class DownloadCommand(BaseModel):
+    """A phone-issued action waiting to be executed by the extension."""
+    command_id: str
+    download_id: str
+    action: CommandAction
+    issued_at: datetime = Field(default_factory=utc_now)
+
+
 class SampleResponse(BaseModel):
     status: str = "ok"
     processed: int
     pairing_id: str
+    # Pending phone commands, handed over (and removed from the queue) with this response
+    commands: list[DownloadCommand] = Field(default_factory=list)
+
+
+class CreateCommandRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    download_id: str = Field(..., pattern=DOWNLOAD_ID_PATTERN)
+    action: CommandAction
+
+
+class CreateCommandResponse(BaseModel):
+    status: str = "queued"
+    command: DownloadCommand
+    expires_in_sec: int
+    # Seconds since the extension last fetched commands or sent a sample; null if never seen
+    # since the server started. Lets the phone warn that the PC may be offline.
+    pc_last_seen_sec: int | None = None
+
+
+class PendingCommandsResponse(BaseModel):
+    commands: list[DownloadCommand] = Field(default_factory=list)
+
+
+class CommandResultRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    download_id: str = Field(..., pattern=DOWNLOAD_ID_PATTERN)
+    action: CommandAction
+    ok: bool
+    error: CommandErrorCode | None = None
+
+
+class CommandResultEvent(BaseModel):
+    """Outcome of a command, pushed to the phone (only failures are pushed today)."""
+    pairing_id: str
+    command_id: str
+    download_id: str
+    action: CommandAction
+    ok: bool
+    error: CommandErrorCode | None = None
 
 
 class CreatePairingRequest(BaseModel):

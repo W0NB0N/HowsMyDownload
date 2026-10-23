@@ -11,9 +11,13 @@ import {
   checkActiveDownloads,
   pollAndSample
 } from "./poller.js";
-import { checkServerHealth } from "./api.js";
+import { checkServerHealth, setCommandHandler } from "./api.js";
+import { handleCommands } from "./commands.js";
 
 console.log("[How's My Download] Service worker starting up.");
+
+// Phone commands (pause / resume / restart) delivered by the server
+setCommandHandler(handleCommands);
 
 // Initialize default storage on first install
 chrome.runtime.onInstalled.addListener(async (details) => {

@@ -3,16 +3,25 @@
  * and the single-report pause behaviour. Imports the real module (no re-implementations).
  */
 
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeChrome, installFakeFetch } from "./test_fake_chrome.js";
 import {
   extractFilename,
   mapDownloadState,
   toProtocolDownload,
-  pollAndSample
+  pollAndSample,
+  rememberFinished,
+  stopCommandWatch,
+  stopPolling
 } from "./background/poller.js";
 import { generateEncryptionKeyHex } from "./background/crypto.js";
+
+// A paired, idle poller with a paused download starts the command watch interval
+after(() => {
+  stopPolling();
+  stopCommandWatch();
+});
 
 test("extractFilename handles Windows paths, POSIX paths, URLs and fallbacks", () => {
   assert.equal(
@@ -97,4 +106,37 @@ test("a paused download is reported once, then again only when it resumes", asyn
   download.bytesReceived = 600;
   await pollAndSample();
   assert.deepEqual(sentStates(), ["paused", "downloading"]);
+});
+
+test("a failed download that is resumed is not also reported as failed in the same sample", async () => {
+  const download = {
+    id: 77,
+    filename: "C:\\dl\\big.iso",
+    state: "interrupted",
+    canResume: true,
+    bytesReceived: 500,
+    totalBytes: 1000
+  };
+  installFakeChrome({
+    downloads: [download],
+    storage: {
+      enabled: true,
+      serverUrl: "https://api.example",
+      isPaired: true,
+      pairingId: "p-1",
+      pairingSecret: "s",
+      encryptionKey: generateEncryptionKeyHex()
+    }
+  });
+  const calls = installFakeFetch(() => ({ status: 200, body: { processed: 1 } }));
+
+  await rememberFinished(77);
+  // Resumed (e.g. from the phone) before the failure was ever sampled
+  download.state = "in_progress";
+  download.paused = false;
+  download.bytesReceived = 600;
+  await pollAndSample();
+
+  const [sample] = calls.map(c => JSON.parse(c.options.body));
+  assert.deepEqual(sample.downloads.filter(d => d.id === "77").map(d => d.state), ["downloading"]);
 });

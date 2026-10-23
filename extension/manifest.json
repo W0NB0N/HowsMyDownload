@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "How's My Download",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mirrors Chrome download progress to your phone in real time.",
   "permissions": [
     "downloads",

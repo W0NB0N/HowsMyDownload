@@ -7,7 +7,14 @@ from firebase_admin import exceptions, messaging
 
 from server.notifier.composite import CompositeNotifier
 from server.notifier.fcm import FCMNotifier
-from server.schemas import DownloadState, EvaluatedDownloadItem, PushPayload
+from server.schemas import (
+    CommandAction,
+    CommandErrorCode,
+    CommandResultEvent,
+    DownloadState,
+    EvaluatedDownloadItem,
+    PushPayload,
+)
 from server.store.memory import InMemoryPairingStore
 
 
@@ -137,3 +144,59 @@ async def test_message_or_transient_errors_keep_pairing(error):
     store = await _store_with_pairing("pair-keep")
     await _send_with_error(store, "pair-keep", error)
     assert await store.get_pairing("pair-keep") is not None
+
+
+# --- Command results ---------------------------------------------------------------------
+
+
+def _command_failure(pairing_id: str = "pair-1") -> CommandResultEvent:
+    return CommandResultEvent(
+        pairing_id=pairing_id,
+        command_id="0" * 32,
+        download_id="42",
+        action=CommandAction.RESUME,
+        ok=False,
+        error=CommandErrorCode.EXPIRED,
+    )
+
+
+@pytest.mark.asyncio
+async def test_command_result_is_sent_as_high_priority_data_message():
+    with (
+        patch("server.notifier.fcm.firebase_admin._apps", {"default": MagicMock()}),
+        patch("server.notifier.fcm.messaging.send", return_value="msg-1") as mock_send,
+    ):
+        await FCMNotifier().send_command_result("device-token", _command_failure())
+
+    msg = mock_send.call_args[0][0]
+    assert msg.token == "device-token"
+    assert msg.data["event"] == "command_result"
+    assert msg.data["ok"] == "false"
+    assert msg.data["error"] == "expired"
+    assert msg.android.priority == "high"
+
+
+@pytest.mark.asyncio
+async def test_command_result_dead_token_purges_pairing():
+    store = await _store_with_pairing("pair-cmd")
+    with (
+        patch("firebase_admin._apps", True),
+        patch("firebase_admin.messaging.send", side_effect=messaging.UnregisteredError("gone")),
+    ):
+        await FCMNotifier(store=store).send_command_result("tok", _command_failure("pair-cmd"))
+    assert await store.get_pairing("pair-cmd") is None
+
+
+@pytest.mark.asyncio
+async def test_composite_fans_out_command_results():
+    received = []
+
+    class Recorder(FCMNotifier):
+        def __init__(self):
+            pass
+
+        async def send_command_result(self, token, event):
+            received.append((token, event.command_id))
+
+    await CompositeNotifier([Recorder(), Recorder()]).send_command_result("t", _command_failure())
+    assert received == [("t", "0" * 32), ("t", "0" * 32)]

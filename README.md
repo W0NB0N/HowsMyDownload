@@ -90,6 +90,9 @@ Every push wakes the phone, so the server caps progress pushes per pairing while
 ### 3. Content-Level Privacy Guard
 A native switch in the Android Compose UI (`--privacy [ hide_filenames ]`) redacts filenames at the content level across all notification channels. Filenames appear only inside the app, while shade notifications display sanitized status lines (`Downloading… • 45.2% • 8.4 MB/s`).
 
+### 4. Remote Control: Pause, Resume, Restart
+Notification buttons and in-app controls send commands back to the PC. The server queues them, and the extension collects them on its sample responses while a transfer is running (~2 s), or by a light poll while something is paused or recently failed. Restart re-downloads the original URL and drops the old entry. Failures (not resumable, PC asleep and the command expired) come back to the phone as a push with a plain reason. See [protocol §5](docs/protocol.md#5-download-commands-phone--server--extension).
+
 ---
 
 ## 📊 Benchmarks

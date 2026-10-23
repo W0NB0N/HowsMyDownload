@@ -15,6 +15,120 @@ let nextRetryAllowedTime = 0;
 let retryTimerId = null;
 let pendingRetrySample = null;
 let currentConnectionState = "connected"; // "connected" | "reconnecting" | "unreachable"
+let commandHandler = null;
+
+/**
+ * Registers the function that executes phone commands (pause/resume/restart). Commands arrive
+ * on sample responses and from fetchCommands(). Kept as a callback so this module does not
+ * import the command executor (which itself depends on this module).
+ */
+export function setCommandHandler(handler) {
+  commandHandler = handler;
+}
+
+function dispatchCommands(commands) {
+  if (!commandHandler || !Array.isArray(commands) || commands.length === 0) return;
+  // Run after the current request finishes: executing a command triggers a new sample
+  Promise.resolve()
+    .then(() => commandHandler(commands))
+    .catch(err => console.warn("[How's My Download] Command handling failed:", err));
+}
+
+/**
+ * Clears local pairing state after the server rejected the current secret (pairing revoked).
+ */
+async function clearRevokedPairing() {
+  resetBackoff();
+  currentConnectionState = "connected";
+  await chrome.storage.local.set({
+    isPaired: false,
+    pairingId: null,
+    pairingSecret: null,
+    pairingCode: null,
+    encryptionKey: null,
+    serverOnline: true,
+    connectionState: "connected",
+    lastServerError: null
+  });
+}
+
+/**
+ * True when the stored secret differs from the one a request was sent with: the secret was
+ * rotated while the request was in flight, so its 401 is not a revocation.
+ */
+async function secretRotatedSince(sentSecret) {
+  const { pairingSecret: currentSecret } = await chrome.storage.local.get({ pairingSecret: null });
+  return Boolean(currentSecret) && currentSecret !== sentSecret;
+}
+
+async function pairedContext() {
+  const ctx = await chrome.storage.local.get({
+    enabled: true,
+    serverUrl: "http://localhost:8000",
+    pairingSecret: null,
+    pairingId: null,
+    isPaired: false
+  });
+  if (!ctx.enabled || !ctx.isPaired || !ctx.pairingSecret || !ctx.pairingId) return null;
+  return { ...ctx, baseUrl: (ctx.serverUrl || "http://localhost:8000").replace(/\/+$/, "") };
+}
+
+/**
+ * Collects pending phone commands (used while no transfer is active, so no samples are being
+ * sent to carry them). Skipped while backing off from an unreachable server.
+ *
+ * @returns {Promise<number>} number of commands received
+ */
+export async function fetchCommands() {
+  const ctx = await pairedContext();
+  if (!ctx || Date.now() < nextRetryAllowedTime) return 0;
+
+  try {
+    const res = await fetch(`${ctx.baseUrl}/v1/pairings/${ctx.pairingId}/commands`, {
+      method: "GET",
+      headers: { "Accept": "application/json", "Authorization": `Bearer ${ctx.pairingSecret}` },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const { commands = [] } = await res.json();
+      dispatchCommands(commands);
+      return commands.length;
+    }
+    if (res.status === 401 && !(await secretRotatedSince(ctx.pairingSecret))) {
+      console.warn("[How's My Download] Server returned 401 (Pairing revoked). Resetting pairing status.");
+      await clearRevokedPairing();
+    }
+  } catch (err) {
+    console.warn(`[How's My Download] Could not fetch commands (${err.message || err})`);
+  }
+  return 0;
+}
+
+/**
+ * Tells the server how a command ended; failures are forwarded to the phone. Best effort.
+ *
+ * @param {{command_id: string, download_id: string, action: string}} command
+ * @param {boolean} ok
+ * @param {string|null} error - one of the protocol's command error codes
+ */
+export async function reportCommandResult(command, ok, error = null) {
+  const ctx = await pairedContext();
+  if (!ctx) return;
+  try {
+    await fetch(`${ctx.baseUrl}/v1/pairings/${ctx.pairingId}/commands/${command.command_id}/result`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${ctx.pairingSecret}`
+      },
+      body: JSON.stringify({ download_id: command.download_id, action: command.action, ok, error }),
+      signal: AbortSignal.timeout(4000)
+    });
+  } catch (err) {
+    console.warn(`[How's My Download] Could not report command result (${err.message || err})`);
+  }
+}
 
 /**
  * Resets backoff state (e.g. on manual trigger, configuration change, or successful ping).
@@ -234,9 +348,9 @@ export async function sendSample(sample) {
       const resData = await res.json();
       const timestamp = new Date(sample.timestamp).toLocaleTimeString();
       console.log(`[How's My Download] Sample @ ${timestamp} -> POST /v1/samples 200 OK (${resData.processed} processed)`);
+      dispatchCommands(resData.commands);
     } else {
-      const { pairingSecret: currentSecret } = await chrome.storage.local.get({ pairingSecret: null });
-      if (res.status === 401 && currentSecret && currentSecret !== pairingSecret) {
+      if (res.status === 401 && await secretRotatedSince(pairingSecret)) {
         // The secret was rotated while this request was in flight: not a revocation.
         console.log("[How's My Download] 401 with a superseded secret; retrying with the rotated one.");
         serverOnline = true;
@@ -247,19 +361,8 @@ export async function sendSample(sample) {
       } else if (res.status === 401) {
         console.warn("[How's My Download] Server returned 401 (Pairing revoked). Resetting pairing status.");
         serverOnline = true;
-        currentConnectionState = "connected";
-        resetBackoff();
         dispatchError = null;
-        await chrome.storage.local.set({
-          isPaired: false,
-          pairingId: null,
-          pairingSecret: null,
-          pairingCode: null,
-          encryptionKey: null,
-          serverOnline: true,
-          connectionState: "connected",
-          lastServerError: null
-        });
+        await clearRevokedPairing();
       } else {
         dispatchError = `Server responded with HTTP ${res.status}`;
         console.warn(`[How's My Download] Server error: ${res.status} ${res.statusText}`);

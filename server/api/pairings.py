@@ -141,6 +141,10 @@ async def delete_pairing(
     if tracker is not None:
         await tracker.forget_pairing(record.pairing_id)
 
+    command_queue = getattr(request.app.state, "command_queue", None)
+    if command_queue is not None:
+        command_queue.forget(record.pairing_id)
+
     logger.info("Pairing %s deleted by %s", record.pairing_id, actor.role)
     return {"status": "ok", "message": "Pairing deleted successfully"}
 

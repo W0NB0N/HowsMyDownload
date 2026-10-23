@@ -5,7 +5,17 @@
 
 export function installFakeChrome({ storage = {}, downloads = [] } = {}) {
   const store = { ...storage };
-  const state = { store, downloads, messages: [] };
+  const alarms = new Map();
+  // Records every chrome.downloads mutation as [method, arg]
+  const downloadCalls = [];
+  const state = { store, downloads, messages: [], alarms, downloadCalls, nextDownloadId: 1000 };
+
+  const find = id => state.downloads.find(d => d.id === id);
+  const requireItem = id => {
+    const item = find(id);
+    if (!item) throw new Error(`Invalid download id ${id}`);
+    return item;
+  };
 
   globalThis.chrome = {
     storage: {
@@ -30,11 +40,54 @@ export function installFakeChrome({ storage = {}, downloads = [] } = {}) {
       }
     },
     downloads: {
-      async search(query) {
-        return state.downloads.filter(d => !query.state || d.state === query.state);
+      async search(query = {}) {
+        return state.downloads.filter(d =>
+          (query.id === undefined || d.id === query.id)
+          && (!query.state || d.state === query.state)
+          && (query.paused === undefined || Boolean(d.paused) === query.paused)
+          && (!query.endedAfter || !d.endTime || d.endTime > query.endedAfter)
+        );
+      },
+      async pause(id) {
+        downloadCalls.push(["pause", id]);
+        requireItem(id).paused = true;
+      },
+      async resume(id) {
+        downloadCalls.push(["resume", id]);
+        const item = requireItem(id);
+        item.paused = false;
+        item.state = "in_progress";
+      },
+      async cancel(id) {
+        downloadCalls.push(["cancel", id]);
+        const item = requireItem(id);
+        item.state = "interrupted";
+        item.error = "USER_CANCELED";
+      },
+      async download(options) {
+        downloadCalls.push(["download", options]);
+        if (state.failNextDownload) {
+          state.failNextDownload = false;
+          throw new Error("Download failed to start");
+        }
+        const id = state.nextDownloadId++;
+        state.downloads.push({
+          id, url: options.url, filename: "", state: "in_progress", paused: false,
+          bytesReceived: 0, totalBytes: -1
+        });
+        return id;
+      },
+      async erase(query) {
+        downloadCalls.push(["erase", query]);
+        state.downloads = state.downloads.filter(d => d.id !== query.id);
+        return [query.id];
       }
     },
-    alarms: { create() {}, clear() {} }
+    alarms: {
+      create(name, info) { alarms.set(name, info); },
+      clear(name) { alarms.delete(name); return Promise.resolve(true); },
+      async get(name) { return alarms.has(name) ? { name, ...alarms.get(name) } : undefined; }
+    }
   };
   return state;
 }
