@@ -3,7 +3,7 @@
 Monorepo that mirrors Chrome download progress to Android notifications.
 Flow: Chrome extension polls `chrome.downloads` every 2s → `POST /v1/samples` (bearer auth, filenames AES-GCM encrypted client-side) → FastAPI server computes speed/ETA, throttles → FCM high-priority **data** message → Android `NotifFcmService` decrypts filename and renders notifications.
 
-Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipped**). `current_build.md` is a status doc written during the build and over-describes some things — trust the code over it.
+Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipped**). `implementation_plan.md`, `current_build.md` and `phases.txt` are local-only planning notes (gitignored); they over-describe some things, so trust the code over them.
 
 ## Layout
 
@@ -17,11 +17,11 @@ Built from `implementation_plan.md` (phases 0–10; **phase 9 LAN mode was skipp
 | `server/throttler/push_throttler.py` | 2s per-pairing coalescing, state-change bypass, owns `seq` + `epoch`. State under `_lock`; sends outside it under a per-pairing FIFO send lock |
 | `server/notifier/` | `BaseNotifier`, `console`, `fcm`, `composite` (console+fcm). No LAN notifier. |
 | `server/store/` | `BasePairingStore` + shared `apply_claim`, `memory`, `firestore` (sync client in `asyncio.to_thread`, transactional claim, `purge_at` TTL field on unclaimed docs, injectable client), `cached` (30s read-through cache; writes invalidate before and after) |
-| `extension/` | MV3, plain ES modules, no build step, no deps. `background/{service-worker,poller,api,crypto,commands}.js`, `popup/` (incl. vendored `qrcode.js`). New background files must also be added to the list in `tools/package_extension.py`. |
+| `extension/` | MV3, plain ES modules, no build step, no deps. `background/{service-worker,poller,api,crypto,commands}.js`, `popup/` (incl. vendored `qrcode.js`). `tools/package_extension.py` ships everything under `background/` and `popup/` plus PNG icons, and fails if a file the manifest names is missing. |
 | `android/` | Kotlin + Compose, single module `app`, package `com.notifs.app`. Most UI lives in `MainActivity.kt` (~1000 lines). Commands: `service/DownloadCommands.kt` (actions per state, send, error text), `service/CommandReceiver.kt` (notification buttons). |
-| `deploy/` | Dockerfile, docker-compose, nginx.conf, systemd unit, `oracle-setup.sh`, Firestore rules |
-| `tools/` | `sample_replay.py` (+ `sample_traces/`), `fcm_test_sender.py`, `package_extension.py` (→ `dist/`), `bench_server.py`, `latency_report.py` (parses `HMD_LATENCY` logcat), `firestore-emulator/firebase.json`, icon scripts |
-| `docs/` | `protocol.md` (schema v1), `ADR-0001-architecture.md`, `metrics.md`, `store-listing.md` |
+| `deploy/` | Dockerfile, docker-compose, nginx.conf, systemd unit, `oracle-setup.sh` (copies the repo into `/opt/notifs`: update = pull in the clone, `cp -r server deploy /opt/notifs/`, rebuild), Firestore rules |
+| `tools/` | `sample_replay.py` (+ `sample_traces/`; creates a throwaway pairing if no `--token`), `fcm_test_sender.py`, `package_extension.py` (→ `dist/`), `check_google_services.py` (used by the release workflow), `bench_server.py`, measurement: `measure_rtt.py`, `clock_offsets.py`, `latency_report.py --offset-ms` (parses `HMD_LATENCY` logcat), `measure_command_loop.py` (adb-driven pause/resume timing); `firestore-emulator/firebase.json`, icon scripts (source art in `assets/`) |
+| `docs/` | `protocol.md` (schema v1), `metrics.md` (measured numbers + methods), `self-hosting.md`, `ADR-0001-architecture.md` (+ outcome addendum), `design.md` (theme tokens), `store-listing.md`, `images/` (README screenshots) |
 
 ## Commands
 
@@ -49,7 +49,9 @@ cd android && ./gradlew testDebugUnitTest assembleDebug
 python tools/package_extension.py
 ```
 
-CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore emulator suite, Android and extension tests on push/PR to master.
+CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore emulator suite, Android and extension tests on push/PR to master. `.github/workflows/release.yml` (manual or `v*` tag) builds a signed APK + extension zip from secrets `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; a tag must equal the app and extension versions.
+
+Android build settings (`-P` or env, see top of `android/app/build.gradle.kts`): `hmd.applicationId`/`HMD_APPLICATION_ID`, `hmd.defaultServerUrl`/`HMD_SERVER_URL` (→ `BuildConfig.DEFAULT_SERVER_URL`, used for typed-code pairing), `hmd.keystoreFile`/`HMD_KEYSTORE_FILE` (+ password/alias/key password). Without a keystore, release builds are unsigned.
 
 ## Config (env vars, `server/config.py`)
 
@@ -78,11 +80,13 @@ CI (`.github/workflows/ci.yml`) runs server (ruff + pytest --cov), the Firestore
 - "PC offline" is an `AlarmManager` alarm (`service/StaleWatchdog.kt`), not a coroutine: exact when `SCHEDULE_EXACT_ALARM` is granted, else inexact and possibly minutes late. Being armed is the signal; it must not check for visible bars, because `setTimeoutAfter` (150s) may already have removed them. Notification IDs come from `NotificationManager.activeNotifications`, not memory.
 - FCM handlers use `runBlocking` on FCM's worker thread on purpose (work must finish before the service is torn down).
 - Cleartext HTTP and user CAs are allowed only in debug builds (`app/src/debug/res/xml/network_security_config.xml`); release is HTTPS + system CAs.
-- Phone latency and battery figures haven't been measured yet; `docs/metrics.md` says how. Don't put unmeasured numbers in docs.
+- Latency figures in `docs/metrics.md` were measured on 24 Oct 2026 (POCO M4 Pro, 4G). Phone clocks can be off by >0.5 s, so `HMD_LATENCY` needs `tools/clock_offsets.py` correction. Battery cost is still unmeasured. Don't put unmeasured numbers in docs.
+- `sent_at` is stamped at dispatch in `push_throttler._prepare_dispatch` (not when the sample arrived), so throttle waits don't count as delivery latency.
+- The extension samples ~100 ms after any state change even while its 2 s loop runs (`sampleSoon` in `poller.js`); without it a phone command's result waited for the next tick (measured 4.1 s → 1.8 s).
 
 ## Conventions
 
 - Python: ruff (line length 100, rules E/F/I/UP/B/SIM), Pydantic v2 models in `schemas.py`, async everywhere, store/notifier behind ABCs. New tests go in `server/tests/` using fixtures in `conftest.py`.
 - Extension: no bundler; keep zero dependencies. Logs are prefixed `[How's My Download]`.
-- UI style on both clients is a dark "terminal" theme (purple `#8a05ff`, green `#61cf92`, monospace). Tokens are listed in `current_build.md` §5.
+- UI style on both clients is a dark "terminal" theme (purple `#8a05ff`, green `#61cf92`, monospace). Tokens are listed in `docs/design.md`. Notifications use the monochrome `R.drawable.ic_stat_hmd` small icon (generated from the pixel art), never the launcher icon.
 - Never commit `google-services.json`, `service-account.json`, or `.env`. `commands.txt` (SSH/deploy notes) is local only.

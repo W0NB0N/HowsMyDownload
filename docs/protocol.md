@@ -84,6 +84,7 @@ FCM **data** messages (not notification messages), so `NotifFcmService` renders 
 | Field | Notes |
 |---|---|
 | `seq` | Strictly increasing per pairing **within one server process**. Assigned at dispatch time, so there are no gaps from throttled samples. |
+| `sent_at` | When the server dispatched this push (after any throttle wait), ISO 8601 UTC. The phone logs receipt minus `sent_at` as `HMD_LATENCY`; correct it for clock offset before trusting it (`docs/metrics.md`). |
 | `epoch` | Server boot time (ms). `seq` restarts at 1 when the server restarts, so the phone compares `seq` only within the same `epoch` and treats a new epoch as a new stream. |
 | `downloads` | Compact JSON. `null` fields are omitted; `mime_type` is never forwarded (the phone does not use it). |
 | `omitted` | Present only when the list was trimmed to fit FCM's 4096-byte data limit (the server budgets 3584 bytes). Terminal transitions (`completed`/`failed`/`erased`) are kept first. While `omitted > 0`, the phone keeps notifications for downloads missing from the list. |

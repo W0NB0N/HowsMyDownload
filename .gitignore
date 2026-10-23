@@ -78,3 +78,4 @@ design-reference/
 
 # Local signed release builds
 android/app/release/
+phases.txt

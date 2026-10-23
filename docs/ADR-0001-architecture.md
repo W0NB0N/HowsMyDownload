@@ -43,3 +43,13 @@ Key constraints & requirements:
 - Requires an initial one-time VM and Nginx setup.
 - Android app requires `POST_NOTIFICATIONS` permission and Google Play Services for FCM.
 - LAN mode requires self-signed certificate generation and fingerprint pinning on Android to comply with Android Network Security Config.
+
+## Outcome (October 2026)
+
+What was built differs from the plan above in three places:
+
+- **Stores (decision 4):** `memory` and `firestore` exist, plus a read-through cache in front of Firestore. **SQLite was not built.** Self-hosters use their own Firestore (free tier), see [`self-hosting.md`](self-hosting.md).
+- **Transports (decision 5):** `ConsoleNotifier`, `FCMNotifier` and a composite exist. **`LanNotifier` and LAN mode were dropped.** Keeping a socket alive on Android needs a foreground service and fails under Doze; [`metrics.md`](metrics.md#5-architectural-analysis-fcm-vs-lan-mode) has the comparison.
+- **Direction of control:** the system is no longer one-way. The phone can pause, resume and restart downloads through a command queue on the server, which the extension drains from its sample responses ([`protocol.md` §5](protocol.md#5-download-commands-phone--server--extension)).
+
+Decisions 1–3 and 6 held. The measured end-to-end figures are in [`metrics.md`](metrics.md).
