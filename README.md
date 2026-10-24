@@ -30,6 +30,33 @@
 
 Large downloads (an OS image, a game update, a dataset) take long enough that you walk away, and then you keep walking back to check. How's My Download mirrors Chrome's download manager onto your phone and lets you act on it from there.
 
+## Install and use it
+
+You need an **Android phone** (Android 8 or newer) and **Google Chrome** on your PC. Both files are on the [latest release](https://github.com/W0NB0N/HowsMyDownload/releases/latest).
+
+**1. Phone: install the app**
+1. On your phone, open the latest release and download `hows-my-download-vX.Y.Z.apk`.
+2. Open the downloaded file. Android asks you to allow installs from your browser or file manager; allow it, then tap **Install**. The app isn't on the Play Store, so Play Protect may warn you; choose **Install anyway**.
+3. Open **How's My Download** and allow notifications when asked.
+
+**2. PC: add the Chrome extension**
+1. Download `hows-my-download-extension-vX.Y.Z.zip` and unzip it into a folder you'll keep. Chrome loads the extension from that folder, so don't delete it.
+2. In Chrome, go to `chrome://extensions`, switch on **Developer mode** (top right), click **Load unpacked**, and select the unzipped folder.
+3. Click the puzzle-piece icon in the toolbar and pin **How's My Download**.
+
+**3. Pair them (once)**
+1. Click the extension icon. In the `--server URL` field enter `https://hmd-api.duckdns.org`, then click **pair device**. A QR code appears.
+2. In the app, tap **> scan qr code** and point the camera at it. Both sides switch to **PAIRED**.
+
+That's it. Start any download in Chrome and a progress notification appears on your phone within a few seconds. Use **Pause**, **Resume** and **Restart** on the notification or in the app.
+
+**Updating:** download the new APK and install it over the old one; you stay paired. For the extension, replace the folder's contents with the new zip's contents and click the reload icon on its card in `chrome://extensions`.
+
+**Not getting notifications?**
+- Check that notifications are allowed for the app in Android settings.
+- On Xiaomi, Oppo, Vivo and similar phones, also allow **Autostart** and set battery usage to **No restrictions**, otherwise the system may block the app in the background.
+- Run your own server instead of using this one: see [self-hosting](docs/self-hosting.md).
+
 ## Measured, not estimated
 
 Measured on 24 Oct 2026 against the production server (Oracle Cloud, India) with a POCO M4 Pro on 4G. Methods, raw data and caveats are in [`docs/metrics.md`](docs/metrics.md).
