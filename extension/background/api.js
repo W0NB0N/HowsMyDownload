@@ -1,10 +1,14 @@
 /**
- * API client module for the Chrome Extension.
+ * API client module for the browser extension.
  * Handles dispatching download samples to the backend server with exponential backoff retry
  * and managing local sample history.
  */
 
 import { encryptField, isValidKeyHex, truncateFilename } from "./crypto.js";
+
+// Hosted relay used unless the user enters another server (self-hosting). Keep in sync with
+// DEFAULT_SERVER_URL in popup/popup.js (test_api.js checks they match).
+export const DEFAULT_SERVER_URL = "https://hmd-api.duckdns.org";
 
 const MAX_HISTORY = 100;
 const BACKOFF_STEPS = [2000, 4000, 8000, 16000, 30000];
@@ -64,13 +68,13 @@ async function secretRotatedSince(sentSecret) {
 async function pairedContext() {
   const ctx = await chrome.storage.local.get({
     enabled: true,
-    serverUrl: "http://localhost:8000",
+    serverUrl: DEFAULT_SERVER_URL,
     pairingSecret: null,
     pairingId: null,
     isPaired: false
   });
   if (!ctx.enabled || !ctx.isPaired || !ctx.pairingSecret || !ctx.pairingId) return null;
-  return { ...ctx, baseUrl: (ctx.serverUrl || "http://localhost:8000").replace(/\/+$/, "") };
+  return { ...ctx, baseUrl: (ctx.serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "") };
 }
 
 /**
@@ -156,7 +160,7 @@ export function getConnectionState() {
  * @returns {Promise<{online: boolean, data?: Object, error?: string, connectionState: string}>}
  */
 export async function checkServerHealth(serverUrl) {
-  const url = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+  const url = (serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "");
   try {
     const res = await fetch(`${url}/health`, {
       method: "GET",
@@ -226,7 +230,7 @@ async function executeRetryPendingSample() {
 export async function sendSample(sample) {
   const { enabled, serverUrl, pairingSecret, pairingId, isPaired, encryptionKey } = await chrome.storage.local.get({
     enabled: true,
-    serverUrl: "http://localhost:8000",
+    serverUrl: DEFAULT_SERVER_URL,
     pairingSecret: null,
     pairingId: null,
     isPaired: false,
@@ -269,7 +273,7 @@ export async function sendSample(sample) {
     return;
   }
 
-  const cleanServerUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+  const cleanServerUrl = (serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "");
   const targetEndpoint = `${cleanServerUrl}/v1/samples`;
 
   const now = Date.now();

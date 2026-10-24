@@ -7,6 +7,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeChrome, installFakeFetch } from "./test_fake_chrome.js";
 import {
+  browserSource,
   extractFilename,
   mapDownloadState,
   toProtocolDownload,
@@ -139,4 +140,16 @@ test("a failed download that is resumed is not also reported as failed in the sa
 
   const [sample] = calls.map(c => JSON.parse(c.options.body));
   assert.deepEqual(sample.downloads.filter(d => d.id === "77").map(d => d.state), ["downloading"]);
+});
+
+test("browserSource names the Chromium browser the phone should show", () => {
+  const brands = (...names) => ({ userAgentData: { brands: names.map(brand => ({ brand, version: "1" })) } });
+  assert.equal(browserSource(brands("Not.A/Brand", "Chromium", "Google Chrome")), "chrome");
+  assert.equal(browserSource(brands("Chromium", "Microsoft Edge")), "edge");
+  assert.equal(browserSource(brands("Chromium", "Brave")), "brave");
+  assert.equal(browserSource({ brave: {}, userAgentData: { brands: [] } }), "brave");
+  assert.equal(browserSource(brands("Chromium", "Opera")), "opera");
+  assert.equal(browserSource(brands("Chromium")), "chromium");
+  assert.equal(browserSource({}), "chromium");
+  assert.equal(browserSource(undefined), "chromium");
 });

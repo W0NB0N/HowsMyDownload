@@ -206,7 +206,7 @@ class NotificationHelper(private val context: Context) {
         percentage: Float?,
         speedBytesSec: Long,
         etaSeconds: Long?,
-        source: String = "Chrome",
+        source: String = "Browser",
         pcName: String = "Desktop-PC",
         hideFilenames: Boolean = false,
         state: String = "downloading",
@@ -289,7 +289,7 @@ class NotificationHelper(private val context: Context) {
         downloadId: String,
         filename: String,
         success: Boolean,
-        source: String = "Chrome",
+        source: String = "Browser",
         pcName: String = "Desktop-PC",
         hideFilenames: Boolean = false,
         canResume: Boolean = false
@@ -333,7 +333,7 @@ class NotificationHelper(private val context: Context) {
         notificationManager.notify(notifId, builder.build())
     }
 
-    fun showStaleNotification(source: String = "Chrome", pcName: String = "Desktop-PC") {
+    fun showStaleNotification(source: String = "Browser", pcName: String = "Desktop-PC") {
         cancelActiveProgressNotifications()
         val notifId = STALE_NOTIFICATION_ID
         val subText = "${source.replaceFirstChar { it.uppercase() }} · $pcName"
@@ -388,7 +388,7 @@ class NotificationHelper(private val context: Context) {
         totalSpeedBytes: Long,
         totalRemainingBytes: Long? = null,
         activeItems: List<Pair<String, Float?>> = emptyList(),
-        source: String = "Chrome",
+        source: String = "Browser",
         pcName: String = "Desktop-PC",
         hideFilenames: Boolean = false
     ) {

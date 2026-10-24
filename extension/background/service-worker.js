@@ -11,7 +11,7 @@ import {
   checkActiveDownloads,
   pollAndSample
 } from "./poller.js";
-import { checkServerHealth, setCommandHandler } from "./api.js";
+import { DEFAULT_SERVER_URL, checkServerHealth, setCommandHandler } from "./api.js";
 import { handleCommands } from "./commands.js";
 
 console.log("[How's My Download] Service worker starting up.");
@@ -23,7 +23,7 @@ setCommandHandler(handleCommands);
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log("[How's My Download] Extension installed / updated:", details.reason);
   const defaults = {
-    serverUrl: "http://localhost:8000",
+    serverUrl: DEFAULT_SERVER_URL,
     pcName: "Desktop-PC",
     enabled: true,
     isPaired: false,
@@ -37,6 +37,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     if (current[k] === undefined) {
       toSet[k] = v;
     }
+  }
+  // Versions before 0.2.1 defaulted to a local dev server. Move unpaired installs still on
+  // that old default to the hosted server; a paired install keeps whatever it pairs with.
+  if (current.serverUrl === "http://localhost:8000" && !current.isPaired) {
+    toSet.serverUrl = DEFAULT_SERVER_URL;
   }
   if (Object.keys(toSet).length > 0) {
     await chrome.storage.local.set(toSet);
@@ -71,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "CHECK_HEALTH") {
-    chrome.storage.local.get({ serverUrl: "http://localhost:8000" }).then(({ serverUrl }) => {
+    chrome.storage.local.get({ serverUrl: DEFAULT_SERVER_URL }).then(({ serverUrl }) => {
       checkServerHealth(message.serverUrl || serverUrl).then(result => {
         sendResponse(result);
       });

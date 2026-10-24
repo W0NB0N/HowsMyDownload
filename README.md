@@ -5,7 +5,7 @@
 <h1 align="center">How's My Download</h1>
 
 <p align="center">
-  Your Chrome downloads, live on your Android phone: progress, speed and ETA in the notification shade,<br>
+  Downloads from Chrome, Brave or any Chromium-based browser, live on your Android phone: progress, speed<br>and ETA in the notification shade,
   with <b>Pause / Resume / Restart</b> buttons that act on the PC. Filenames are end-to-end encrypted.
 </p>
 
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12">
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin / Compose">
-  <img src="https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white" alt="Chrome MV3">
+  <img src="https://img.shields.io/badge/Chromium-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white" alt="Chromium MV3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
 </p>
 
@@ -28,27 +28,27 @@
 
 ## Why
 
-Large downloads (an OS image, a game update, a dataset) take long enough that you walk away, and then you keep walking back to check. How's My Download mirrors Chrome's download manager onto your phone and lets you act on it from there.
+Large downloads (an OS image, a game update, a dataset) take long enough that you walk away, and then you keep walking back to check. How's My Download mirrors your browser's download manager onto your phone and lets you act on it from there.
 
 ## Install and use it
 
-You need an **Android phone** (Android 8 or newer) and **Google Chrome** on your PC. Both files are on the [latest release](https://github.com/W0NB0N/HowsMyDownload/releases/latest).
+You need an **Android phone** (Android 8 or newer) and a **Chromium-based browser** on your PC: tested on Chrome and Brave, and Edge, Opera and Vivaldi use the same extension system. Both files are on the [latest release](https://github.com/W0NB0N/HowsMyDownload/releases/latest).
 
 **1. Phone: install the app**
 1. On your phone, open the latest release and download `hows-my-download-vX.Y.Z.apk`.
 2. Open the downloaded file. Android asks you to allow installs from your browser or file manager; allow it, then tap **Install**. The app isn't on the Play Store, so Play Protect may warn you; choose **Install anyway**.
 3. Open **How's My Download** and allow notifications when asked.
 
-**2. PC: add the Chrome extension**
-1. Download `hows-my-download-extension-vX.Y.Z.zip` and unzip it into a folder you'll keep. Chrome loads the extension from that folder, so don't delete it.
-2. In Chrome, go to `chrome://extensions`, switch on **Developer mode** (top right), click **Load unpacked**, and select the unzipped folder.
+**2. PC: add the browser extension**
+1. Download `hows-my-download-extension-vX.Y.Z.zip` and unzip it into a folder you'll keep. The browser loads the extension from that folder, so don't delete it.
+2. Open the extensions page (`chrome://extensions`; Brave and Edge also accept `brave://extensions` and `edge://extensions`), switch on **Developer mode**, click **Load unpacked**, and select the unzipped folder.
 3. Click the puzzle-piece icon in the toolbar and pin **How's My Download**.
 
 **3. Pair them (once)**
-1. Click the extension icon. In the `--server URL` field enter `https://hmd-api.duckdns.org`, then click **pair device**. A QR code appears.
+1. Click the extension icon, then **pair device**. A QR code appears. The server field is already set to `https://hmd-api.duckdns.org`; change it only if you run your own server.
 2. In the app, tap **> scan qr code** and point the camera at it. Both sides switch to **PAIRED**.
 
-That's it. Start any download in Chrome and a progress notification appears on your phone within a few seconds. Use **Pause**, **Resume** and **Restart** on the notification or in the app.
+That's it. Start any download in your browser and a progress notification appears on your phone within a few seconds. Use **Pause**, **Resume** and **Restart** on the notification or in the app.
 
 **Updating:** download the new APK and install it over the old one; you stay paired. For the extension, replace the folder's contents with the new zip's contents and click the reload icon on its card in `chrome://extensions`.
 
@@ -64,7 +64,7 @@ Measured on 24 Oct 2026 against the production server (Oracle Cloud, India) with
 | | Median | Spread |
 |---|---|---|
 | Server → phone push (386 pushes, clock-offset corrected) | **448 ms** | p95 680 ms, p99 782 ms |
-| Tap **Pause** on the phone → Chrome paused → phone shows PAUSED | **1.8 s** | 1.4–2.2 s |
+| Tap **Pause** on the phone → browser paused → phone shows PAUSED | **1.8 s** | 1.4–2.2 s |
 | Tap → "Pausing…" feedback | **219 ms** | 181–255 ms |
 | Server handling per sample (in-process) | **1.5 ms** | p95 1.9 ms |
 
@@ -74,7 +74,7 @@ Measuring found a real bug. The pause round trip was first **4.1 s**: an extensi
 
 ```mermaid
 flowchart LR
-    subgraph PC["PC: Chrome extension (MV3)"]
+    subgraph PC["PC: browser extension (MV3)"]
         Poller["Poller<br/>chrome.downloads every 2 s"] --> Enc["AES-256-GCM<br/>encrypt filenames"]
         Cmd["Command executor<br/>pause · resume · restart"]
     end
@@ -95,7 +95,7 @@ flowchart LR
 
 1. **Pairing.** The extension asks the server for a pairing code and shows a QR code with the server URL, the code and a fresh **AES-256 key**. The phone scans it and claims the code with its FCM token. The key travels only through the camera; the server never has it.
 2. **Progress.** While a download runs, the extension sends a sample every 2 s with the filename encrypted. The server smooths speed (EMA), computes the ETA, and pushes an FCM data message, throttled to one every 2 s; state changes push immediately. The app decrypts the name and updates one notification per download.
-3. **Commands.** A tap on Pause posts a command to the server, which queues it. The extension picks it up from the response to its next sample (or a light poll when nothing is transferring), applies it through `chrome.downloads`, and samples at once so the phone sees the result. Failures ("Chrome can't resume this one", "PC didn't respond") come back as a push with a plain reason.
+3. **Commands.** A tap on Pause posts a command to the server, which queues it. The extension picks it up from the response to its next sample (or a light poll when nothing is transferring), applies it through `chrome.downloads`, and samples at once so the phone sees the result. Failures ("The browser can't resume this one", "PC didn't respond") come back as a push with a plain reason.
 
 ## Engineering highlights
 
@@ -122,7 +122,7 @@ flowchart LR
 | Path | Contents |
 |---|---|
 | [`server/`](server) | FastAPI app: ingest, pairing, commands, tracker, throttler, FCM notifier, Firestore and in-memory stores |
-| [`extension/`](extension) | Chrome MV3 extension, plain ES modules, no build step, no dependencies |
+| [`extension/`](extension) | Chromium MV3 extension (Chrome, Brave, Edge, …), plain ES modules, no build step, no dependencies |
 | [`android/`](android) | Kotlin + Jetpack Compose app |
 | [`deploy/`](deploy) | Dockerfile, Compose, Nginx, systemd unit, VM setup script, Firestore rules |
 | [`tools/`](tools) | Measurement tools (latency, clock offset, command loop, RTT), benchmark, trace replay, packaging |
@@ -154,7 +154,7 @@ Pushes are tied to the Firebase project the app was built with, so running your 
 
 ## Limitations
 
-- Chrome on the PC and Android on the phone only; delivery needs Google Play Services (FCM).
+- Chromium-based browsers on the PC (not Firefox or Safari) and Android on the phone; delivery needs Google Play Services (FCM).
 - Pending commands and push sequencing live in server memory, so the server runs as a single worker, and a restart drops queued commands.
 - Restart can't re-create downloads that came from a form POST or a `blob:` URL.
 - Phone battery cost hasn't been measured yet ([how to](docs/metrics.md#4-not-yet-measured)).

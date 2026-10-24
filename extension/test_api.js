@@ -5,7 +5,8 @@
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeChrome, installFakeFetch, sleep } from "./test_fake_chrome.js";
-import { prepareWirePayload, sendSample, resetBackoff } from "./background/api.js";
+import { readFileSync } from "node:fs";
+import { DEFAULT_SERVER_URL, prepareWirePayload, sendSample, resetBackoff } from "./background/api.js";
 import { decryptFilename, generateEncryptionKeyHex } from "./background/crypto.js";
 
 const KEY = generateEncryptionKeyHex();
@@ -131,4 +132,12 @@ test("a 401 for the current secret means revoked: clear pairing and key", async 
   assert.equal(chromeState.store.isPaired, false);
   assert.equal(chromeState.store.pairingSecret, null);
   assert.equal(chromeState.store.encryptionKey, null);
+});
+
+test("the popup and the background agree on the default server", () => {
+  const popup = readFileSync(new URL("./popup/popup.js", import.meta.url), "utf8");
+  const match = popup.match(/const DEFAULT_SERVER_URL = "([^"]+)";/);
+  assert.ok(match, "popup.js defines DEFAULT_SERVER_URL");
+  assert.equal(match[1], DEFAULT_SERVER_URL);
+  assert.match(DEFAULT_SERVER_URL, /^https:\/\//);
 });

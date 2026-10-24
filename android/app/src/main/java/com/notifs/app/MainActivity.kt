@@ -207,7 +207,7 @@ fun HomeScreen(
                     )
                 }
                 Text(
-                    text = "hmd // android v0.2.0",
+                    text = "hmd // android v0.2.1",
                     color = TextMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,

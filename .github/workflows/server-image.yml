@@ -45,7 +45,7 @@ jobs:
             latest=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
             org.opencontainers.image.title=How's My Download server
-            org.opencontainers.image.description=FastAPI relay that mirrors Chrome download progress to Android over FCM
+            org.opencontainers.image.description=FastAPI relay that mirrors browser download progress to Android over FCM
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@v3

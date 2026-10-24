@@ -8,7 +8,7 @@ How's My Download has three parts. Only one of them is hosted:
 
 | Part | Runs on | Self-hosting means |
 |---|---|---|
-| Chrome extension | your PC | the same extension, pointed at your server |
+| Browser extension (Chrome, Brave, …) | your PC | the same extension, pointed at your server |
 | Server | a machine reachable over HTTPS | **your** server |
 | Android app | your phone | **your own build** of the app |
 
@@ -115,7 +115,7 @@ The same settings can come from environment variables (`HMD_SERVER_URL`, `HMD_KE
 
 For the API-key restriction in step 1.5, get your certificate's SHA-256 with `keytool -list -v -keystore hmd-release.jks -alias hmd`.
 
-## 4. Chrome extension
+## 4. Browser extension
 
 1. Get the extension: the zip from the workflow (unzip it), or the `extension/` folder of your checkout.
 2. Open `chrome://extensions`, enable *Developer mode*, and choose *Load unpacked*.
@@ -124,8 +124,8 @@ For the API-key restriction in step 1.5, get your certificate's SHA-256 with `ke
 
 ## 5. Check that it works
 
-Start a large download in Chrome. Within a few seconds the phone should show a progress bar with speed and ETA. Then:
-- tap **Pause** on the notification: Chrome pauses within ~2 s and the bar shows *PAUSED* with **Resume**;
+Start a large download in your browser. Within a few seconds the phone should show a progress bar with speed and ETA. Then:
+- tap **Pause** on the notification: the browser pauses within ~2 s and the bar shows *PAUSED* with **Resume**;
 - tap **Resume**.
 
 | Symptom | Likely cause |

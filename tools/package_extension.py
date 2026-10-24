@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Packages the Chrome Extension into a clean production ZIP for Chrome Web Store submission.
+"""Packages the browser extension into a clean ZIP (Chrome Web Store or Load unpacked).
 
 Ships manifest.json plus everything under background/, popup/ and the PNG icons; tests and
 the SVG icon source stay out. Exits non-zero if a file the manifest points at is missing.
@@ -45,7 +45,7 @@ def package_extension() -> Path:
         sys.exit(f"[ERROR] manifest.json references files that would not be shipped: {missing}")
 
     zip_filename = dist_dir / f"hows-my-download-extension-v{manifest['version']}.zip"
-    print(f"[PACKAGE] Packaging Chrome Extension v{manifest['version']} into {zip_filename.name}...")
+    print(f"[PACKAGE] Packaging browser extension v{manifest['version']} into {zip_filename.name}...")
     with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
         for rel_path in files:
             src_file = ext_dir / rel_path

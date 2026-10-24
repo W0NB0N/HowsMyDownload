@@ -103,7 +103,7 @@ class NotifFcmService : FirebaseMessagingService() {
         // >0 when the server trimmed the list to fit FCM's 4KB limit
         val omitted = data["omitted"]?.toIntOrNull() ?: 0
         val pairingId = data["pairing_id"] ?: ""
-        val source = data["source"] ?: "Chrome"
+        val source = data["source"] ?: "Browser"
         val pcName = data["pc_name"] ?: "Desktop-PC"
         val downloadsJsonStr = data["downloads"] ?: "[]"
 

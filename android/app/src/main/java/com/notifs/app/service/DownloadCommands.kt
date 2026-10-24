@@ -62,12 +62,12 @@ object DownloadCommands {
 
     /** Text for an error code from the extension or server (see docs/protocol.md). */
     fun errorMessage(errorCode: String?, action: Action): String = when (errorCode) {
-        "expired" -> "PC didn't respond. Is it awake with Chrome open?"
-        "not_found" -> "That download is no longer in Chrome"
+        "expired" -> "PC didn't respond. Is it awake with the browser open?"
+        "not_found" -> "That download is no longer in the browser"
         "invalid_state" -> "Can't ${action.verb} it right now"
-        "not_resumable" -> "Chrome can't resume this one. Try restart"
+        "not_resumable" -> "The browser can't resume this one. Try restart"
         "unsupported_url" -> "This download can't be restarted from its link"
-        else -> "Chrome couldn't ${action.verb} the download"
+        else -> "The browser couldn't ${action.verb} the download"
     }
 
     /**

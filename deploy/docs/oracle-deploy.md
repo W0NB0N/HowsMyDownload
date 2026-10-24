@@ -9,7 +9,7 @@ This guide provides an end-to-end walkthrough for deploying the **How's My Downl
 ```mermaid
 flowchart TD
     subgraph Clients["Paired Clients"]
-        EXT["Chrome Extension\n(Manifest V3)"]
+        EXT["Browser Extension\n(Chromium, Manifest V3)"]
         AND["Android App\n(Kotlin / Compose)"]
     end
 
@@ -259,7 +259,7 @@ sudo ./deploy/oracle-setup.sh
 
 ## 4. Connecting Clients to Production
 
-### 1. Chrome Extension
+### 1. Browser Extension
 1. Open the extension popup.
 2. Set `--server URL` to `https://notifs.yourdomain.com`.
 3. Click **pair device** to show a QR code carrying the server URL and the encryption key.

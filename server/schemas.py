@@ -67,7 +67,7 @@ class SourceDownloadItem(BaseModel):
 
 
 class SamplePayload(BaseModel):
-    """Payload sent by the Chrome extension or PC client to POST /v1/samples."""
+    """Payload sent by the browser extension or PC client to POST /v1/samples."""
     model_config = ConfigDict(extra="ignore")
 
     pairing_id: str = Field(..., min_length=1, max_length=128, description="Pairing identifier")
@@ -143,7 +143,7 @@ class CommandErrorCode(StrEnum):
     EXPIRED = "expired"
 
 
-# Source download IDs as they appear in samples (Chrome uses integers)
+# Source download IDs as they appear in samples (Chromium browsers use integers)
 DOWNLOAD_ID_PATTERN = r"^[A-Za-z0-9_-]{1,128}$"
 COMMAND_ID_PATTERN = r"^[0-9a-f]{32}$"
 

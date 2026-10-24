@@ -66,7 +66,7 @@ object StaleWatchdog {
         val helper = NotificationHelper(context)
         Log.w(TAG, "No FCM update for ${TIMEOUT_MS / 1000}s while transfers active: PC offline")
         helper.showStaleNotification(
-            source = intent.getStringExtra(EXTRA_SOURCE) ?: "Chrome",
+            source = intent.getStringExtra(EXTRA_SOURCE) ?: "Browser",
             pcName = intent.getStringExtra(EXTRA_PC_NAME) ?: "Desktop-PC",
         )
         DownloadRepository.clear()

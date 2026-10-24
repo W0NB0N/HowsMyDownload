@@ -5,6 +5,10 @@
  * Terminal Dark Theme Edition.
  */
 
+// Hosted relay used unless the user enters another server. Classic script, so it can't import
+// background/api.js; test_api.js checks the two values match.
+const DEFAULT_SERVER_URL = "https://hmd-api.duckdns.org";
+
 document.addEventListener("DOMContentLoaded", async () => {
   const serverUrlInput = document.getElementById("server-url");
   const pcNameInput = document.getElementById("pc-name");
@@ -34,7 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 1. Load initial settings
   const settings = await chrome.storage.local.get({
-    serverUrl: "http://localhost:8000",
+    serverUrl: DEFAULT_SERVER_URL,
     pcName: "Desktop-PC",
     enabled: true,
     lastSample: null,
@@ -58,7 +62,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 2. Setting change handlers
   serverUrlInput.addEventListener("change", () => {
-    const newUrl = serverUrlInput.value.trim() || "http://localhost:8000";
+    const newUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
     serverUrlInput.value = newUrl;
     chrome.storage.local.set({ serverUrl: newUrl });
     checkBackendHealth(newUrl);
@@ -79,7 +83,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 3. Pairing handlers
   pairBtn.addEventListener("click", async () => {
-    const sUrl = (serverUrlInput.value.trim() || "http://localhost:8000").replace(/\/+$/, "");
+    const sUrl = (serverUrlInput.value.trim() || DEFAULT_SERVER_URL).replace(/\/+$/, "");
     const hostname = pcNameInput.value.trim() || "Desktop-PC";
 
     pairBtn.disabled = true;
@@ -151,7 +155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   unpairBtn.addEventListener("click", async () => {
-    const sUrl = (serverUrlInput.value.trim() || "http://localhost:8000").replace(/\/+$/, "");
+    const sUrl = (serverUrlInput.value.trim() || DEFAULT_SERVER_URL).replace(/\/+$/, "");
     const { pairingId, pairingSecret } = await chrome.storage.local.get(["pairingId", "pairingSecret"]);
 
     if (pairingId && pairingSecret) {
@@ -180,7 +184,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (rotateSecretBtn) {
     rotateSecretBtn.addEventListener("click", async () => {
       const { serverUrl, pairingId, pairingSecret } = await chrome.storage.local.get({
-        serverUrl: "http://localhost:8000",
+        serverUrl: DEFAULT_SERVER_URL,
         pairingId: null,
         pairingSecret: null
       });
@@ -191,7 +195,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       rotateSecretBtn.innerHTML = "<span>rotating...</span>";
 
       try {
-        const cleanUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+        const cleanUrl = (serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "");
         const res = await fetch(`${cleanUrl}/v1/pairings/${pairingId}/rotate-secret`, {
           method: "POST",
           headers: {
@@ -270,7 +274,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function validatePairingSession(serverUrl, pairingId, secret) {
     try {
-      const cleanUrl = (serverUrl || "http://localhost:8000").replace(/\/+$/, "");
+      const cleanUrl = (serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "");
       const res = await fetch(`${cleanUrl}/v1/pairings/${pairingId}`, {
         headers: { "Authorization": `Bearer ${secret}` },
         signal: AbortSignal.timeout(3000)

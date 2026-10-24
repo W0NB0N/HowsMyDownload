@@ -6,13 +6,13 @@ notification text until it changes. All times are taken on this PC's clock, so n
 offsets are involved. Measured:
 
     tap -> "Pausing…"   local feedback (the app's own UI update)
-    tap -> "PAUSED"     phone -> server -> extension -> Chrome -> server -> FCM -> phone
+    tap -> "PAUSED"     phone -> server -> extension -> browser -> server -> FCM -> phone
     tap -> speed shown  same loop for resume
 
 Resolution is one `dumpsys notification` call (~250 ms); a tap costs one `adb shell input`
 call (~100 ms) and is timestamped at its midpoint.
 
-Requirements: a download running in Chrome and the phone paired; for --surface notification
+Requirements: a download running in the browser and the phone paired; for --surface notification
 an open notification shade (the tool expands the notification), for --surface app the app
 open on screen showing the download.
 

@@ -62,7 +62,7 @@ class TrackerManager:
             try:
                 return tracked.update(src_item, timestamp=now)
             except InvalidStateTransitionError as err:
-                # The source is the source of truth (e.g. Chrome restarted a download from
+                # The source is the source of truth (e.g. the browser restarted a download from
                 # byte 0). Rejecting the sample would 500 every retry and wedge the pairing.
                 logger.warning("Resetting download %s after illegal transition: %s", key, err)
 

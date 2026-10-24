@@ -10,9 +10,9 @@ Metadata, description and policy disclosures for publishing the extension to the
 |---|---|
 | **Name** | How's My Download |
 | **Short name** | HMD |
-| **Version** | `0.2.0` |
+| **Version** | `0.2.1` |
 | **Category** | Productivity |
-| **Summary (≤ 132 chars)** | Chrome download progress, speed and ETA on your Android phone. Pause, resume or restart from there. Filenames are E2E encrypted. |
+| **Summary (≤ 132 chars)** | Your browser's download progress, speed and ETA on your Android phone. Pause, resume or restart from there. E2E encrypted. |
 | **Website** | `https://github.com/W0NB0N/HowsMyDownload` |
 | **Support URL** | `https://github.com/W0NB0N/HowsMyDownload/issues` |
 
@@ -21,7 +21,7 @@ Metadata, description and policy disclosures for publishing the extension to the
 ## 2. Detailed description
 
 ```text
-Started a 6 GB ISO and walked away from your desk? How's My Download puts the download on your phone: a live progress bar with speed and time left, updated every 2 seconds, plus Pause, Resume and Restart buttons that act on Chrome.
+Started a 6 GB ISO and walked away from your desk? How's My Download puts the download on your phone: a live progress bar with speed and time left, updated every 2 seconds, plus Pause, Resume and Restart buttons that act on your browser. Works in Chrome, Brave and other Chromium-based browsers.
 
 FEATURES
 • Live progress notifications on Android with speed, ETA and a progress bar, one per download.

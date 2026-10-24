@@ -53,7 +53,7 @@ async function resume(item) {
 
 /**
  * Starts the download over from byte 0: cancels it if still running, downloads the original
- * URL again, and removes the superseded entry from Chrome's list. The new download gets a new
+ * URL again, and removes the superseded entry from the browser's list. The new download gets a new
  * id; the old one is reported once as "erased" so the phone drops its notification.
  */
 async function restart(item) {
@@ -86,7 +86,7 @@ async function restart(item) {
 }
 
 /**
- * Runs one validated command. Throws CommandError (or a Chrome error) on failure.
+ * Runs one validated command. Throws CommandError (or a browser API error) on failure.
  */
 export async function executeCommand(command) {
   const [item] = await chrome.downloads.search({ id: Number(command.download_id) });

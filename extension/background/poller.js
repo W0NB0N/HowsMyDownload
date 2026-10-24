@@ -1,5 +1,5 @@
 /**
- * Poller module for the Chrome Extension.
+ * Poller module for the browser extension.
  * Watches chrome.downloads API, computes state snapshots, and sends periodic samples.
  * Supports single-report pause status: when a download enters paused state, it is reported once,
  * and no further samples are sent for that download until its state changes.
@@ -58,8 +58,29 @@ export function extractFilename(item) {
   return `download-${item.id}`;
 }
 
+// User-Agent Client Hints brand -> `source` value; the phone shows it as e.g. "Brave · <PC>"
+const BROWSER_BRANDS = [
+  ["Microsoft Edge", "edge"],
+  ["Opera", "opera"],
+  ["Brave", "brave"],
+  ["Vivaldi", "vivaldi"],
+  ["Google Chrome", "chrome"]
+];
+
 /**
- * Maps a Chrome DownloadItem to our protocol state.
+ * Which Chromium-based browser is running the extension. Brave exposes `navigator.brave`
+ * (it does not always list itself in the brands); others are read from the UA brands.
+ * Anything unrecognised is reported as "chromium".
+ */
+export function browserSource(nav = globalThis.navigator) {
+  if (nav?.brave) return "brave";
+  const brands = (nav?.userAgentData?.brands || []).map(entry => entry.brand);
+  const match = BROWSER_BRANDS.find(([brand]) => brands.includes(brand));
+  return match ? match[1] : "chromium";
+}
+
+/**
+ * Maps a browser DownloadItem to our protocol state.
  */
 export function mapDownloadState(item) {
   if (item.state === "complete") {
@@ -78,7 +99,7 @@ export function mapDownloadState(item) {
 }
 
 /**
- * Converts a Chrome DownloadItem to our protocol Schema v1 DownloadItem.
+ * Converts a browser DownloadItem to our protocol Schema v1 DownloadItem.
  */
 export function toProtocolDownload(item) {
   const state = mapDownloadState(item);
@@ -147,7 +168,7 @@ export async function pollAndSample() {
     return;
   }
 
-  // 1. Query in_progress downloads from Chrome
+  // 1. Query in_progress downloads from the browser
   const inProgressItems = (await chrome.downloads.search({ state: "in_progress" }))
     .filter(item => !restartedIds.has(String(item.id)));
   const now = Date.now();
@@ -237,7 +258,7 @@ export async function pollAndSample() {
 
     const samplePayload = {
       pairing_id: pairingId,
-      source: "chrome",
+      source: browserSource(),
       pc_name: pcName,
       timestamp: new Date().toISOString(),
       downloads: downloadItems
@@ -360,7 +381,7 @@ export function stopCommandWatch() {
 }
 
 /**
- * Checks if there are active downloads in Chrome and starts polling if so.
+ * Checks if there are active downloads in the browser and starts polling if so.
  */
 export async function checkActiveDownloads() {
   const active = await chrome.downloads.search({ state: "in_progress" });

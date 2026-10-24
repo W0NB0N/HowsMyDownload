@@ -43,10 +43,11 @@ Authorization: Bearer <extension_secret>
 ```
 
 - `pairing_id`: ignored for authorization; the server uses the pairing that owns the bearer secret.
+- `source`: the browser that sent the sample, shown on the phone as e.g. "Brave · <PC name>": `chrome | brave | edge | opera | vivaldi`, or `chromium` when it can't tell (read from `navigator.brave` and the User-Agent Client Hints brands).
 - `filename` *(required)* and `mime_type` *(optional)*: **always ciphertext** (section 4). The extension truncates filenames to 120 characters (keeping the extension) before encrypting, so a single item stays small.
 - `total_bytes`: `null` if unknown.
 - `state`: `starting | downloading | paused | completed | failed | erased`. The extension sends `erased` once for a download replaced by a phone `restart`.
-- `can_resume` *(optional)*: `true` on a `failed` download Chrome can resume without starting over. Omitted otherwise.
+- `can_resume` *(optional)*: `true` on a `failed` download the browser can resume without starting over. Omitted otherwise.
 - Limits: ≤ 100 downloads, filename ≤ 1024 chars, request body ≤ 50 KB.
 
 ### Responses
@@ -203,7 +204,7 @@ For every `/{pairing_id}` route, an unknown pairing and a wrong secret both retu
 The phone can **pause**, **resume** or **restart** a download on the PC. The extension has no push channel, so the server queues commands until the extension collects them:
 
 - **While a transfer is active**, the `/v1/samples` response carries them (`commands`), so a command costs no extra request and lands within ~2 s.
-- **While nothing is transferring but something is controllable** (a paused download, or one that failed in the last hour), the extension polls `GET /v1/pairings/{pairing_id}/commands` every 3 s for 10 minutes after the last activity, then every 30 s (`chrome.alarms`, Chrome's minimum).
+- **While nothing is transferring but something is controllable** (a paused download, or one that failed in the last hour), the extension polls `GET /v1/pairings/{pairing_id}/commands` every 3 s for 10 minutes after the last activity, then every 30 s (`chrome.alarms`, Chromium's minimum).
 
 Delivery is **at most once**: a command is removed from the queue when it is handed over. The queue lives in server memory (single worker, like the tracker). A restart drops pending commands.
 
@@ -237,7 +238,7 @@ There is one pending command per download. A newer tap replaces an older one tha
 | `resume` | no-op | `chrome.downloads.resume` | resume if `canResume`, else `not_resumable` | `invalid_state` |
 | `restart` | cancel, then download the original `url` again | same | download the original `url` again | `invalid_state` |
 
-A restart saves to Chrome's default download folder with no "Save as" dialog (`saveAs: false`), since nobody may be at the PC to answer it. It only re-fetches the item's own `http(s)`/`ftp` URL (`blob:`/`data:` → `unsupported_url`). The new download gets a new id. The old entry is erased from Chrome's list and reported once with state `erased`, so the phone drops it instead of showing "failed". Unknown ids → `not_found`; Chrome API errors → `browser_error`. After acting, the extension samples immediately.
+A restart saves to the browser's default download folder with no "Save as" dialog (`saveAs: false`), since nobody may be at the PC to answer it. It only re-fetches the item's own `http(s)`/`ftp` URL (`blob:`/`data:` → `unsupported_url`). The new download gets a new id. The old entry is erased from the browser's download list and reported once with state `erased`, so the phone drops it instead of showing "failed". Unknown ids → `not_found`; Browser API errors → `browser_error`. After acting, the extension samples immediately.
 
 ### 5.4 Report result (extension ➔ server)
 `POST /v1/pairings/{pairing_id}/commands/{command_id}/result` with `Authorization: Bearer <extension secret>`:

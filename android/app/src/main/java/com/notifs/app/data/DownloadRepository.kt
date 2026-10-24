@@ -13,7 +13,7 @@ data class AppDownloadItem(
     val percentage: Float? = null,
     val speedBytesSec: Long = 0L,
     val etaSeconds: Long? = null,
-    // Failed downloads only: Chrome can resume without starting over
+    // Failed downloads only: the browser can resume without starting over
     val canResume: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 )

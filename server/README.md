@@ -1,6 +1,6 @@
 # How's My Download: server
 
-FastAPI service that authenticates samples from the Chrome extension, computes speed and ETA, throttles and orders pushes, sends them to the phone over FCM, and queues the phone's pause/resume/restart commands for the extension.
+FastAPI service that authenticates samples from the browser extension, computes speed and ETA, throttles and orders pushes, sends them to the phone over FCM, and queues the phone's pause/resume/restart commands for the extension.
 
 ```bash
 # from the repository root

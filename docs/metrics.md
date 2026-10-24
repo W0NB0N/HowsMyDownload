@@ -19,11 +19,11 @@ Every number on this page is either **measured** (tool, hardware and network nam
 | **running again**, with another download running | **1.7 s** | 1.6–2.0 s | 5 |
 | **running again**, with nothing else transferring | **3.4 s** | 0.5–3.8 s | 5 |
 
-The path is phone → server → (extension picks it up) → Chrome → server → FCM → phone.
+The path is phone → server → (extension picks it up) → browser → server → FCM → phone.
 - **Pickup while something is downloading:** commands ride back on the extension's 2 s sample responses, so pickup takes 0–2 s.
 - **Pickup while nothing is transferring:** the extension polls for commands every 3 s, so pickup takes 0–3 s. That explains the wider range in the last row.
 
-**What the measurement found.** The first run gave a median of **4.1 s** to PAUSED (3.6–4.4 s). After Chrome applied a command, the resulting state change waited for the extension's *next* 2 s tick, because "sample now" was ignored while the poll loop was already running. The poller now samples ~100 ms after any state change (debounced), which halved the round trip. The regression test is in `extension/test_commands.js` ("while already polling, a command's outcome is sampled at once").
+**What the measurement found.** The first run gave a median of **4.1 s** to PAUSED (3.6–4.4 s). After the browser applied a command, the resulting state change waited for the extension's *next* 2 s tick, because "sample now" was ignored while the poll loop was already running. The poller now samples ~100 ms after any state change (debounced), which halved the round trip. The regression test is in `extension/test_commands.js` ("while already polling, a command's outcome is sampled at once").
 
 ### Server → phone push delivery
 
@@ -48,7 +48,7 @@ This covers server → Google FCM → phone over 4G, including the phone waking 
 | Reused (the extension while polling) | **39 ms** | 41 ms |
 | Fresh (DNS + TCP + TLS) | 127 ms | 181 ms |
 
-Derived, not measured directly: a Chrome progress change reaches the phone in about **0.5 s** at the median (~20 ms one way + ~2 ms server + 448 ms push), plus up to 2 s until the extension's next sample.
+Derived, not measured directly: a download progress change reaches the phone in about **0.5 s** at the median (~20 ms one way + ~2 ms server + 448 ms push), plus up to 2 s until the extension's next sample.
 
 ### Reproduce
 
@@ -108,6 +108,6 @@ Phase 9 (LAN / WebSocket mode) was evaluated and not built:
 | Background delivery on Android | Needs a foreground service with a permanent notification; `dataSync` foreground services are time-limited on Android 15+ | Google Play Services wakes the app briefly; no permanent notification |
 | Doze | Sockets are suspended in deep Doze | High-priority messages get temporary Doze exemptions |
 | Network topology | Fails on guest, campus and corporate networks that isolate clients | Works on any network, including cellular |
-| PC side | Chrome extensions can't open listening sockets, so a native daemon would have to run on the PC | Only the extension; the server is hosted |
+| PC side | Browser extensions can't open listening sockets, so a native daemon would have to run on the PC | Only the extension; the server is hosted |
 | TLS | Self-signed certificate plus pinning on the phone | Standard Let's Encrypt TLS, plus end-to-end filename encryption |
 | Latency | Lower (single LAN hop) | Measured median 448 ms server → phone over 4G (§1), well under the 2 s update interval |

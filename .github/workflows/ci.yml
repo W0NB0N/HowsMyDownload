@@ -120,7 +120,7 @@ jobs:
         run: ./gradlew assembleDebug
 
   extension-ci:
-    name: Chrome Extension (Manifest V3)
+    name: Browser Extension (Manifest V3)
     runs-on: ubuntu-latest
     defaults:
       run:
