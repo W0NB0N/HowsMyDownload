@@ -169,6 +169,31 @@ h1, h2, h3 {
   color: var(--c-fg);
 }
 
+.count-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clear-x {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line-strong);
+  border-radius: 2px;
+  color: var(--c-faint);
+  font: 700 14px/1 var(--f-body);
+  cursor: pointer;
+}
+
+.clear-x:hover {
+  border-color: var(--c-fail);
+  color: var(--c-fail);
+}
+
 /* Downloads */
 .downloads-list {
   display: flex;

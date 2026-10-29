@@ -283,6 +283,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Clear the list like the app's "clear notifications": active downloads return with the
+  // next sample (~2s), finished ones were already reported and stay gone.
+  document.getElementById("clear-downloads-btn").addEventListener("click", async () => {
+    const { lastSample } = await chrome.storage.local.get("lastSample");
+    if (lastSample) await chrome.storage.local.set({ lastSample: { ...lastSample, downloads: [] } });
+    updateUI({ downloads: [] }, enabledToggle.checked);
+  });
+
   // 5. Live update listener
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === "SAMPLE_DISPATCHED") {

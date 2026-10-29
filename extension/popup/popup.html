@@ -52,7 +52,10 @@
     <section class="stack">
       <div class="row">
         <h2 class="lbl">--active <span>downloads</span></h2>
-        <span id="download-count" class="badge b-mute count-pill">0</span>
+        <div class="count-group">
+          <span id="download-count" class="badge b-mute count-pill">0</span>
+          <button id="clear-downloads-btn" class="clear-x" title="Clear downloads (active ones come back on the next sample)" aria-label="Clear downloads">&times;</button>
+        </div>
       </div>
       <div id="downloads-container" class="downloads-list">
         <div class="empty-state">
