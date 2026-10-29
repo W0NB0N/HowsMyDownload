@@ -80,6 +80,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateUI(settings.lastSample, settings.enabled, settings.lastSampleTime);
   checkBackendHealth(settings.serverUrl);
   updatePairingUI(settings.isPaired);
+  // The background only hears about a phone-side unpair from a 401 on its next upload,
+  // which never comes while nothing is downloading. Ask the server whenever the popup opens.
+  if (settings.isPaired && settings.pairingId && settings.pairingSecret) {
+    validatePairingSession(settings.serverUrl, settings.pairingId, settings.pairingSecret);
+  }
 
   // 2. Setting change handlers
   serverUrlInput.addEventListener("change", () => {
