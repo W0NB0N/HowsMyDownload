@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "How's My Download",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Mirrors your browser's download progress to your Android phone in real time.",
   "permissions": [
     "downloads",

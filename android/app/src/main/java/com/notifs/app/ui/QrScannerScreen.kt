@@ -11,25 +11,34 @@ import androidx.annotation.OptIn
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -79,160 +88,276 @@ fun QrScannerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BgCanvas)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+            .background(HmdColors.Frame)
     ) {
         // Header
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 8.dp)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Text("$ ", color = PurpleLight, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    text = "how's my download",
-                    color = TextWhite,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    text = "$ how's my download // qr",
+                    color = HmdColors.OnFrame,
+                    fontFamily = JBMono,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(" // qr", color = TextMuted, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                Text(
+                    text = "SCAN ONCE.",
+                    color = HmdColors.Fg,
+                    fontFamily = Shoulders,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 52.sp,
+                    style = TextStyle(
+                        lineHeight = 44.7.sp,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)
+                    ),
+                    maxLines = 1
+                )
             }
 
-            Button(
+            TerminalButton(
+                text = "cancel",
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = BgElevated),
-                border = BorderStroke(1.dp, BorderSubtle),
-                shape = RoundedCornerShape(4.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Text("cancel", color = TextDim, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-            }
+                prompt = "<",
+                height = 44.dp,
+                fontSize = 13f,
+                background = HmdColors.Bg
+            )
         }
 
         // Camera Preview with HUD
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
+                .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
+                .clip(RoundedCornerShape(HmdShape.Radius))
+                .background(Color(0xFF050507))
         ) {
-            if (hasCameraPermission) {
-                CameraPreviewView(
-                    onQrScanned = { rawQrText ->
-                        val now = System.currentTimeMillis()
-                        if (!isProcessing && (now - lastAttemptTimestamp > 3000L)) {
-                            isProcessing = true
-                            lastAttemptTimestamp = now
-                            statusMessage = "Claiming pairing code..."
-                            coroutineScope.launch {
-                                handleQrPayload(
-                                    rawText = rawQrText,
-                                    fcmToken = fcmToken,
-                                    dataStore = dataStore,
-                                    onSuccess = {
-                                        Toast.makeText(context, "Pairing Successful!", Toast.LENGTH_SHORT).show()
-                                        onPairSuccess()
-                                    },
-                                    onError = { err ->
-                                        statusMessage = "Error: $err"
-                                        isProcessing = false
-                                        lastAttemptTimestamp = System.currentTimeMillis()
-                                    }
-                                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color(0xFF0B0B10)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (hasCameraPermission) {
+                    CameraPreviewView(
+                        onQrScanned = { rawQrText ->
+                            val now = System.currentTimeMillis()
+                            if (!isProcessing && (now - lastAttemptTimestamp > 3000L)) {
+                                isProcessing = true
+                                lastAttemptTimestamp = now
+                                statusMessage = "Claiming pairing code..."
+                                coroutineScope.launch {
+                                    handleQrPayload(
+                                        rawText = rawQrText,
+                                        fcmToken = fcmToken,
+                                        dataStore = dataStore,
+                                        onSuccess = {
+                                            Toast.makeText(context, "Pairing Successful!", Toast.LENGTH_SHORT).show()
+                                            onPairSuccess()
+                                        },
+                                        onError = { err ->
+                                            statusMessage = "Error: $err"
+                                            isProcessing = false
+                                            lastAttemptTimestamp = System.currentTimeMillis()
+                                        }
+                                    )
+                                }
                             }
                         }
-                    }
-                )
-
-                // Viewfinder HUD Overlay
-                Canvas(modifier = Modifier.size(240.dp)) {
-                    val strokeW = 3.dp.toPx()
-                    val cornerLen = 24.dp.toPx()
-
-                    // Center box border
-                    drawRect(
-                        color = Color(0x3361CF92),
-                        size = Size(size.width, size.height),
-                        style = Stroke(width = 1.dp.toPx())
                     )
 
-                    // Top-Left Corner
-                    drawLine(color = GreenNeon, start = Offset(0f, 0f), end = Offset(cornerLen, 0f), strokeWidth = strokeW)
-                    drawLine(color = GreenNeon, start = Offset(0f, 0f), end = Offset(0f, cornerLen), strokeWidth = strokeW)
+                    LiveTag(Modifier.align(Alignment.TopEnd).padding(14.dp))
 
-                    // Top-Right Corner
-                    drawLine(color = GreenNeon, start = Offset(size.width, 0f), end = Offset(size.width - cornerLen, 0f), strokeWidth = strokeW)
-                    drawLine(color = GreenNeon, start = Offset(size.width, 0f), end = Offset(size.width, cornerLen), strokeWidth = strokeW)
+                    // Viewfinder HUD Overlay
+                    Viewfinder(Modifier.size(252.dp))
 
-                    // Bottom-Left Corner
-                    drawLine(color = GreenNeon, start = Offset(0f, size.height), end = Offset(cornerLen, size.height), strokeWidth = strokeW)
-                    drawLine(color = GreenNeon, start = Offset(0f, size.height), end = Offset(0f, size.height - cornerLen), strokeWidth = strokeW)
-
-                    // Bottom-Right Corner
-                    drawLine(color = GreenNeon, start = Offset(size.width, size.height), end = Offset(size.width - cornerLen, size.height), strokeWidth = strokeW)
-                    drawLine(color = GreenNeon, start = Offset(size.width, size.height), end = Offset(size.width, size.height - cornerLen), strokeWidth = strokeW)
-                }
-
-                if (isProcessing) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xAA09090C)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = GreenNeon, strokeWidth = 3.dp)
+                    if (isProcessing) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xAA09090C)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = HmdColors.Signal, strokeWidth = 3.dp)
+                        }
                     }
-                }
-            } else {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = BgCard),
-                    border = BorderStroke(1.dp, StatePaused),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
+                } else {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .background(HmdColors.Surface, RoundedCornerShape(HmdShape.Radius))
+                            .border(1.dp, HmdColors.Warn, RoundedCornerShape(HmdShape.Radius))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Camera permission required to scan QR code.", color = TextDim, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                        Button(
+                        Text(
+                            "Camera permission required to scan QR code.",
+                            color = HmdColors.Muted,
+                            fontFamily = JBMono,
+                            fontSize = 12.sp
+                        )
+                        TerminalButton(
+                            text = "grant permission",
                             onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                            colors = ButtonDefaults.buttonColors(containerColor = PurpleBrand),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text("Grant Permission", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                        }
+                            tone = HmdColors.Warn
+                        )
                     }
                 }
             }
-        }
 
-        // Footer status text
-        Surface(
-            color = BgElevated,
-            shape = RoundedCornerShape(4.dp),
-            border = BorderStroke(1.dp, BorderSubtle),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "// $statusMessage",
-                color = if (isProcessing) GreenNeon else TextDim,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(10.dp)
-            )
+            // Footer status / hint bar
+            Box(Modifier.fillMaxWidth().height(1.dp).background(HmdColors.Line))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(HmdColors.Surface)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Sammy(SammyPose.CarryQr, 63.dp, contentDescription = "Sammy holding up a QR code")
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row {
+                        Text(
+                            text = "// $statusMessage",
+                            color = if (isProcessing) HmdColors.Signal else HmdColors.Fg,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 18.sp,
+                            fontFamily = JBMono,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        BlinkingCaret()
+                    }
+                    Text(
+                        text = buildAnnotatedString {
+                            append("Extension › ")
+                            withStyle(SpanStyle(color = HmdColors.Flag)) { append("pair device") }
+                            append(". The key in the QR never touches the server.")
+                        },
+                        color = HmdColors.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        fontFamily = JBMono
+                    )
+                }
+            }
         }
+    }
+}
+
+/** Green corner brackets, a faint frame and a scan line sweeping top to bottom (2.4 s). */
+@Composable
+private fun Viewfinder(modifier: Modifier = Modifier) {
+    val still = rememberReducedMotion()
+    val sweep = if (still) 0.5f else {
+        val t by rememberInfiniteTransition(label = "scan").animateFloat(
+            initialValue = 0.06f, targetValue = 0.92f,
+            animationSpec = infiniteRepeatable(
+                tween(1200, easing = CubicBezierEasing(0.45f, 0f, 0.55f, 1f)),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scanY"
+        )
+        t
+    }
+    Canvas(modifier) {
+        val edge = 5.dp.toPx()
+        val arm = 36.dp.toPx()
+        val out = 2.dp.toPx()
+        drawRect(color = HmdColors.Signal.copy(alpha = 0.04f))
+        drawRect(
+            color = HmdColors.Signal.copy(alpha = 0.18f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+        )
+        // Corners: a horizontal and a vertical bar each, 2 dp outside the frame
+        val w = size.width
+        val h = size.height
+        listOf(
+            Offset(-out, -out) to Offset(1f, 1f),
+            Offset(w + out, -out) to Offset(-1f, 1f),
+            Offset(-out, h + out) to Offset(1f, -1f),
+            Offset(w + out, h + out) to Offset(-1f, -1f)
+        ).forEach { (corner, dir) ->
+            val x0 = if (dir.x > 0) corner.x else corner.x - arm
+            val y0 = if (dir.y > 0) corner.y else corner.y - edge
+            drawRect(HmdColors.Signal, topLeft = Offset(x0, y0), size = Size(arm, edge))
+            val vx = if (dir.x > 0) corner.x else corner.x - edge
+            val vy = if (dir.y > 0) corner.y else corner.y - arm
+            drawRect(HmdColors.Signal, topLeft = Offset(vx, vy), size = Size(edge, arm))
+        }
+        // Scan line with a soft glow
+        val inset = 12.dp.toPx()
+        val y = h * sweep
+        val glow = 12.dp.toPx()
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(Color.Transparent, HmdColors.Signal.copy(alpha = 0.35f), Color.Transparent),
+                startY = y - glow, endY = y + glow
+            ),
+            topLeft = Offset(inset, y - glow),
+            size = Size(w - inset * 2, glow * 2)
+        )
+        drawRect(HmdColors.Signal, topLeft = Offset(inset, y - 1.dp.toPx()), size = Size(w - inset * 2, 2.dp.toPx()))
+    }
+}
+
+@Composable
+private fun LiveTag(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        BlinkingCaret(square = true)
+        Text(
+            text = "LIVE",
+            color = HmdColors.Signal,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.1.em,
+            fontFamily = JBMono
+        )
+    }
+}
+
+/** Terminal caret blinking with steps(1) over 1 s: a purple "_" or a green square. */
+@Composable
+private fun BlinkingCaret(square: Boolean = false) {
+    val still = rememberReducedMotion()
+    val visible = if (still) true else {
+        val phase by rememberInfiniteTransition(label = "caret").animateValue(
+            initialValue = 0, targetValue = 2, typeConverter = Int.VectorConverter,
+            animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing)),
+            label = "caretPhase"
+        )
+        phase == 0
+    }
+    if (square) {
+        Box(Modifier.size(6.dp).alpha(if (visible) 1f else 0f).background(HmdColors.Signal))
+    } else {
+        Text(
+            text = "_",
+            color = HmdColors.Flag,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = JBMono,
+            modifier = Modifier.alpha(if (visible) 1f else 0f)
+        )
     }
 }
 

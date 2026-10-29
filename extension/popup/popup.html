@@ -4,139 +4,113 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>How's My Download</title>
+  <link rel="stylesheet" href="hmd-tokens.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="terminal-card">
-    <!-- Header -->
-    <header class="header">
-      <div class="title-row">
-        <div class="pixel-icon" aria-hidden="true">
-          <img src="../icons/icon16.png" width="18" height="18" alt="logo" style="image-rendering: pixelated; border-radius: 3px;" />
-        </div>
-        <div class="title-text">
-          <span class="prompt-prefix">$</span>
-          <span class="app-name">how's my download</span>
-          <span class="version-tag">v0.1</span>
-        </div>
-      </div>
-      <div id="status-badge" class="badge badge-idle">
-        <span class="status-dot"></span>
-        <span class="status-label">IDLE</span>
-      </div>
-    </header>
+  <!-- Header -->
+  <header class="hdr">
+    <span id="header-sammy" class="sammy s-think" style="--k: 1.25" role="img" aria-label="Sammy"></span>
+    <h1 class="hdr-title">How's my download</h1>
+    <span id="version-tag" class="version-tag"></span>
+    <span class="hdr-spacer"></span>
+    <div id="status-badge" class="badge badge-idle">
+      <span class="status-dot"></span>
+      <span class="status-label">IDLE</span>
+    </div>
+  </header>
 
+  <main class="panel">
     <!-- Sync Toggle -->
-    <section class="section compact">
-      <div class="field-row">
-        <div class="label-with-icon">
-          <span class="cli-flag">--sync</span>
-          <span class="cli-desc">background tracking</span>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="enabled-toggle" checked>
-          <span class="slider"></span>
-        </label>
-      </div>
+    <section class="row">
+      <h2 class="lbl">--sync <span>background tracking</span></h2>
+      <label class="tgl">
+        <input type="checkbox" id="enabled-toggle" checked aria-label="Background tracking">
+        <span class="tgl-track"><span class="tgl-knob"></span></span>
+      </label>
     </section>
 
     <!-- Config Fields -->
-    <section class="section">
-      <div class="field">
-        <div class="field-label-row">
-          <label for="server-url"><span class="cli-flag">--server</span> <span class="cli-dim">URL</span></label>
-          <span id="server-status-pill" class="server-pill pill-checking">
-            <span class="pill-dot"></span>
-            <span class="pill-text">CHECKING</span>
-          </span>
-        </div>
-        <div class="input-wrapper">
-          <input type="text" id="server-url" placeholder="https://hmd-api.duckdns.org" spellcheck="false" autocomplete="off" />
-        </div>
-        <div id="server-error-text" class="field-error-text hidden"></div>
+    <section class="stack">
+      <div class="row">
+        <label for="server-url" class="lbl">--server <span>url</span></label>
+        <span id="server-status-pill" class="server-pill pill-checking">
+          <span class="pill-dot"></span>
+          <span class="pill-text">CHECKING</span>
+        </span>
       </div>
-      <div class="field">
-        <label for="pc-name"><span class="cli-flag">--client</span> <span class="cli-dim">hostname</span></label>
-        <div class="input-wrapper">
-          <input type="text" id="pc-name" placeholder="Desktop-PC" spellcheck="false" autocomplete="off" />
-        </div>
-      </div>
+      <input type="text" id="server-url" class="field" placeholder="https://hmd-api.duckdns.org" spellcheck="false" autocomplete="off" />
+      <div id="server-error-text" class="field-error-text hidden"></div>
+    </section>
+
+    <section class="stack">
+      <label for="pc-name" class="lbl">--client <span>hostname</span></label>
+      <input type="text" id="pc-name" class="field" placeholder="Desktop-PC" spellcheck="false" autocomplete="off" />
     </section>
 
     <!-- Active Downloads Monitor -->
-    <section class="section">
-      <div class="section-header">
-        <div class="section-title">
-          <span class="cli-flag">--active</span>
-          <span class="cli-desc">downloads</span>
-        </div>
-        <span id="download-count" class="count-pill">0</span>
+    <section class="stack">
+      <div class="row">
+        <h2 class="lbl">--active <span>downloads</span></h2>
+        <span id="download-count" class="badge b-mute count-pill">0</span>
       </div>
       <div id="downloads-container" class="downloads-list">
         <div class="empty-state">
-          <span class="cli-dim">// no transfers in progress</span>
+          <span class="sammy s-chill" style="--k: 3" role="img" aria-label="Sammy sitting back on the grass"></span>
+          <span>// no transfers in progress</span>
         </div>
       </div>
     </section>
 
     <!-- Pairing Section -->
-    <section class="section" id="pairing-section">
-      <div class="section-header">
-        <div class="section-title">
-          <span class="cli-flag">--pair</span>
-          <span class="cli-desc">mobile relay</span>
-        </div>
+    <section class="stack" id="pairing-section">
+      <div class="row">
+        <h2 class="lbl">--pair <span>mobile relay</span></h2>
         <span id="pairing-status-badge" class="pairing-status-badge status-unpaired">UNPAIRED</span>
       </div>
 
-      <div class="pairing-box">
-        <!-- Unpaired Action -->
-        <div id="pairing-unpaired-view">
-          <button id="pair-btn" class="btn btn-primary">
-            <img src="pair-icon.png" width="11" height="11" class="btn-pixel-icon" alt="pair icon" />
-            <span>pair device</span>
-          </button>
+      <!-- Unpaired Action -->
+      <div id="pairing-unpaired-view" class="pair-card">
+        <div class="pair-intro">
+          <span class="sammy s-carryPhone" style="--k: 1.5" role="img" aria-label="Sammy holding up a phone"></span>
+          <span class="pair-blurb">Get downloads on your phone. One QR, about two minutes.</span>
         </div>
+        <button id="pair-btn" class="btn btn-cta">
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><path fill-rule="evenodd" d="M0 0h5v5H0zM1 1v3h3V1zM7 0h5v5H7zM8 1v3h3V1zM0 7h5v5H0zM1 8v3h3V8zM2 2h1v1H2zM9 2h1v1H9zM2 9h1v1H2zM7 7h2v2H7zM10 7h2v1h-2zM9 9h1v3H9zM11 10h1v2h-1z"/></svg>
+          <span>pair device</span>
+        </button>
+      </div>
 
-        <!-- Active QR Code View -->
-        <div id="qr-container" class="qr-box hidden">
+      <!-- Active QR Code View -->
+      <div id="qr-container" class="pair-card qr-box hidden">
+        <div class="qr-holder">
           <div class="qr-canvas-wrapper">
-            <canvas id="qr-canvas"></canvas>
+            <canvas id="qr-canvas" aria-label="Pairing QR code"></canvas>
           </div>
-          <div class="qr-info">
-            <div class="qr-code-row">
-              <span class="cli-dim">CODE:</span>
-              <span id="qr-code-text" class="qr-code-value">------</span>
-            </div>
-            <div id="qr-expiry-text" class="qr-expiry-label">expires in 5m</div>
-          </div>
-          <button id="qr-cancel-btn" class="btn btn-ghost">cancel</button>
+          <span class="sammy s-carryQr qr-sammy" style="--k: 1.75" aria-hidden="true"></span>
         </div>
+        <div class="qr-code-row">
+          <span class="qr-code-label">CODE</span>
+          <span id="qr-code-text" class="qr-code-value">------</span>
+        </div>
+        <div id="qr-expiry-text" class="qr-expiry-label">expires in 5m</div>
+        <button id="qr-cancel-btn" class="btn btn-sm"><span class="p">&lt;</span>cancel</button>
+      </div>
 
-        <!-- Paired View -->
-        <div id="pairing-paired-view" class="paired-details hidden">
-          <div class="paired-row">
-            <span class="paired-led"></span>
-            <span id="paired-device-text" class="paired-title">Paired with Mobile Relay</span>
+      <!-- Paired View -->
+      <div id="pairing-paired-view" class="pair-card paired-details hidden">
+        <div class="pair-intro">
+          <span class="sammy s-key" style="--k: 1.5" role="img" aria-label="Sammy holding up a small green key"></span>
+          <div class="paired-text">
+            <span id="paired-device-text" class="paired-title">Paired with your phone</span>
+            <span class="paired-sub">filenames sealed · AES-256-GCM</span>
           </div>
-          <button id="rotate-secret-btn" class="btn btn-secondary">
-            <span>&gt; rotate secret</span>
-          </button>
-          <button id="unpair-btn" class="btn btn-danger">
-            <span>&gt; unpair device</span>
-          </button>
         </div>
+        <button id="unpair-btn" class="btn btn-r"><span class="p">&gt;</span>unpair</button>
       </div>
     </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-      <button id="export-trace-btn" class="btn btn-ghost" title="Export recorded JSON sample trace for testing">
-        <span class="cli-prompt">&gt;</span> export trace
-      </button>
-      <span id="last-sample-time" class="timestamp">--:--:--</span>
-    </footer>
-  </div>
+  </main>
 
   <script src="qrcode.js"></script>
   <script src="popup.js"></script>

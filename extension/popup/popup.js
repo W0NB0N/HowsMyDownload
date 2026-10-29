@@ -18,8 +18,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const serverErrorText = document.getElementById("server-error-text");
   const downloadsContainer = document.getElementById("downloads-container");
   const downloadCount = document.getElementById("download-count");
-  const exportTraceBtn = document.getElementById("export-trace-btn");
-  const lastSampleTime = document.getElementById("last-sample-time");
 
   // Pairing elements
   const pairingBadge = document.getElementById("pairing-status-badge");
@@ -32,9 +30,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   const qrCancelBtn = document.getElementById("qr-cancel-btn");
   const pairedView = document.getElementById("pairing-paired-view");
   const unpairBtn = document.getElementById("unpair-btn");
-  const rotateSecretBtn = document.getElementById("rotate-secret-btn");
+  document.getElementById("version-tag").textContent = `v${chrome.runtime.getManifest().version}`;
+  const headerSammy = document.getElementById("header-sammy");
+
+  const PAIR_BTN_HTML = `<svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><path fill-rule="evenodd" d="M0 0h5v5H0zM1 1v3h3V1zM7 0h5v5H7zM8 1v3h3V1zM0 7h5v5H0zM1 8v3h3V8zM2 2h1v1H2zM9 2h1v1H9zM2 9h1v1H2zM7 7h2v2H7zM10 7h2v1h-2zM9 9h1v3H9zM11 10h1v2h-1z"/></svg><span>pair device</span>`;
+  const EMPTY_HTML = '<div class="empty-state"><span class="sammy s-chill" style="--k: 3" role="img" aria-label="Sammy sitting back on the grass"></span><span>// no transfers in progress</span></div>';
+  const STATE_LABELS = {
+    starting: "Starting",
+    downloading: "Downloading",
+    paused: "Paused",
+    completed: "Complete",
+    failed: "Failed"
+  };
+  const STATE_TONES = {
+    starting: "var(--c-flag)",
+    downloading: "var(--c-signal)",
+    paused: "var(--c-warn)",
+    completed: "var(--c-signal)",
+    failed: "var(--c-fail)"
+  };
 
   let pairingPollInterval = null;
+  // Display only: the header Sammy pose, and download speed derived from consecutive samples
+  let shownPaired = false;
+  let shownActiveCount = 0;
+  let shownEnabled = true;
+  const speedById = new Map(); // download id -> { bytes, at, speed }
 
   // 1. Load initial settings
   const settings = await chrome.storage.local.get({
@@ -125,7 +146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       if (typeof window.renderQRCode === "function") {
-        window.renderQRCode(qrCanvas, qrPayload, 160);
+        window.renderQRCode(qrCanvas, qrPayload, 172);
       }
 
       qrCodeText.textContent = pairingData.code;
@@ -133,6 +154,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       unpairedView.classList.add("hidden");
       qrContainer.classList.remove("hidden");
+      updatePairingUI(false);
 
       // Start polling for pairing claim
       startPairingPoll(sUrl, pairingData.pairing_id, pairingData.secret);
@@ -141,10 +163,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       alert(`Failed to create pairing: ${err.message}`);
     } finally {
       pairBtn.disabled = false;
-      pairBtn.innerHTML = `
-        <img src="pair-icon.png" width="11" height="11" class="btn-pixel-icon" alt="pair icon" />
-        <span>pair device</span>
-      `;
+      pairBtn.innerHTML = PAIR_BTN_HTML;
     }
   });
 
@@ -152,6 +171,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     stopPairingPoll();
     qrContainer.classList.add("hidden");
     unpairedView.classList.remove("hidden");
+    updatePairingUI(false);
   });
 
   unpairBtn.addEventListener("click", async () => {
@@ -179,49 +199,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     updatePairingUI(false);
   });
-
-  // Rotate secret handler
-  if (rotateSecretBtn) {
-    rotateSecretBtn.addEventListener("click", async () => {
-      const { serverUrl, pairingId, pairingSecret } = await chrome.storage.local.get({
-        serverUrl: DEFAULT_SERVER_URL,
-        pairingId: null,
-        pairingSecret: null
-      });
-
-      if (!pairingId || !pairingSecret) return;
-
-      rotateSecretBtn.disabled = true;
-      rotateSecretBtn.innerHTML = "<span>rotating...</span>";
-
-      try {
-        const cleanUrl = (serverUrl || DEFAULT_SERVER_URL).replace(/\/+$/, "");
-        const res = await fetch(`${cleanUrl}/v1/pairings/${pairingId}/rotate-secret`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${pairingSecret}`,
-            "Content-Type": "application/json"
-          },
-          signal: AbortSignal.timeout(4000)
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        await chrome.storage.local.set({ pairingSecret: data.new_secret });
-        rotateSecretBtn.innerHTML = "<span style='color: var(--green-neon);'>&gt; secret rotated!</span>";
-        setTimeout(() => {
-          rotateSecretBtn.innerHTML = "<span>&gt; rotate secret</span>";
-          rotateSecretBtn.disabled = false;
-        }, 2000);
-      } catch (err) {
-        rotateSecretBtn.innerHTML = "<span style='color: #f87171;'>&gt; rotation failed</span>";
-        setTimeout(() => {
-          rotateSecretBtn.innerHTML = "<span>&gt; rotate secret</span>";
-          rotateSecretBtn.disabled = false;
-        }, 2000);
-      }
-    });
-  }
 
   function startPairingPoll(serverUrl, pairingId, secret) {
     stopPairingPoll();
@@ -253,6 +230,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function updatePairingUI(isPaired) {
+    shownPaired = isPaired;
+    updateHeaderSammy();
     if (isPaired) {
       pairingBadge.textContent = "PAIRED";
       pairingBadge.className = "pairing-status-badge status-paired";
@@ -265,6 +244,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       pairedView.classList.add("hidden");
       // If currently displaying QR code modal waiting for phone to claim, keep QR visible
       if (qrContainer && !qrContainer.classList.contains("hidden")) {
+        pairingBadge.textContent = "WAITING";
+        pairingBadge.className = "pairing-status-badge status-waiting";
         return;
       }
       unpairedView.classList.remove("hidden");
@@ -296,25 +277,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Ignore network errors on passive check
     }
   }
-
-  // 4. Export sample trace handler (for dev/testing with tools/sample_replay.py)
-  exportTraceBtn.addEventListener("click", async () => {
-    const { sampleHistory = [] } = await chrome.storage.local.get("sampleHistory");
-    if (sampleHistory.length === 0) {
-      alert("No sample trace recorded yet. Start a download first.");
-      return;
-    }
-
-    const jsonStr = JSON.stringify(sampleHistory, null, 2);
-    const blob = new Blob([jsonStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `download-samples-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
 
   // 5. Live update listener
   chrome.runtime.onMessage.addListener((message) => {
@@ -417,17 +379,27 @@ document.addEventListener("DOMContentLoaded", async () => {
    */
   function updateUI(sample, isEnabled, timestamp) {
     const downloads = sample?.downloads || [];
-    renderDownloads(downloads);
+    renderDownloads(downloads, Date.parse(sample?.timestamp));
     updateBadge(downloads.length, isEnabled);
+  }
 
-    if (timestamp) {
-      const d = new Date(timestamp);
-      const timeStr = d.toTimeString().split(" ")[0]; // HH:MM:SS
-      lastSampleTime.textContent = timeStr;
+  // Header pose: waiting for a scan › unpaired › syncing › paired and idle
+  function updateHeaderSammy() {
+    let pose = "key";
+    if (!shownPaired && !qrContainer.classList.contains("hidden")) {
+      pose = "deliver";
+    } else if (!shownPaired) {
+      pose = "think";
+    } else if (shownEnabled && shownActiveCount > 0) {
+      pose = "downloading";
     }
+    headerSammy.className = `sammy s-${pose}`;
   }
 
   function updateBadge(activeCount, isEnabled) {
+    shownActiveCount = activeCount;
+    shownEnabled = isEnabled;
+    updateHeaderSammy();
     statusBadge.innerHTML = '<span class="status-dot"></span><span class="status-label"></span>';
     const label = statusBadge.querySelector(".status-label");
     
@@ -444,9 +416,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     downloadCount.textContent = activeCount;
   }
 
-  function renderDownloads(downloads) {
+  function formatSpeed(bytesPerSec) {
+    if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+    if (bytesPerSec >= 1024) return `${Math.round(bytesPerSec / 1024)} KB/s`;
+    return `${Math.round(bytesPerSec)} B/s`;
+  }
+
+  // Bytes per second since the previous sample of the same download. The same sample can
+  // arrive twice (runtime message + storage change), which keeps the last speed.
+  function speedFor(dl, sampledAt) {
+    const prev = speedById.get(dl.id);
+    if (prev && sampledAt <= prev.at) return prev.speed;
+    const speed = prev
+      ? Math.max(0, (dl.bytes_downloaded - prev.bytes) / ((sampledAt - prev.at) / 1000))
+      : null;
+    speedById.set(dl.id, { bytes: dl.bytes_downloaded, at: sampledAt, speed });
+    return speed;
+  }
+
+  function renderDownloads(downloads, sampledAt) {
     if (!downloads || downloads.length === 0) {
-      downloadsContainer.innerHTML = '<div class="empty-state"><span class="cli-dim">// no transfers in progress</span></div>';
+      downloadsContainer.innerHTML = EMPTY_HTML;
       return;
     }
 
@@ -455,23 +445,32 @@ document.addEventListener("DOMContentLoaded", async () => {
       const itemEl = document.createElement("div");
       itemEl.className = "download-item";
 
+      // Sammy's pose and the badge follow the download's state; anything else reads as offline
+      const state = Object.hasOwn(STATE_LABELS, dl.state) ? dl.state : null;
+      const pose = state || "offline";
+      const label = state ? STATE_LABELS[state] : String(dl.state || "unknown");
+      const tone = state ? STATE_TONES[state] : "var(--c-muted)";
+      const fillClass = { paused: "fill-paused", failed: "fill-failed" }[state] || (state ? "" : "fill-muted");
+
       const totalKnown = dl.total_bytes && dl.total_bytes > 0;
-      const pct = totalKnown ? Math.round((dl.bytes_downloaded / dl.total_bytes) * 100) : null;
+      const pct = totalKnown ? Math.min(100, (dl.bytes_downloaded / dl.total_bytes) * 100) : null;
       const currentMB = (dl.bytes_downloaded / (1024 * 1024)).toFixed(1);
       const totalMB = totalKnown ? (dl.total_bytes / (1024 * 1024)).toFixed(1) : "?";
+      const speed = Number.isFinite(sampledAt) ? speedFor(dl, sampledAt) : null;
+      const speedText = state === "downloading" && speed !== null ? ` · ${formatSpeed(speed)}` : "";
 
       itemEl.innerHTML = `
-        <div class="download-title-row">
-          <span class="download-name" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</span>
-          <span class="state-tag state-${dl.state}">${dl.state}</span>
+        <div class="row">
+          <h3 class="download-name" title="${escapeHtml(dl.filename)}">${escapeHtml(dl.filename)}</h3>
+          <span class="badge b-${pose}">${escapeHtml(label)}</span>
         </div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill ${totalKnown ? "" : "progress-indeterminate"}" 
-               style="width: ${totalKnown ? pct : 100}%;"></div>
+        <div class="track" style="--p: ${totalKnown ? pct.toFixed(2) : 0}">
+          <span class="sammy s-${pose}" style="--k: 1.1" role="img" aria-label="Sammy: ${escapeHtml(label.toLowerCase())}"></span>
+          <div class="bar"><i class="${fillClass}${totalKnown ? "" : " indeterminate"}" style="width: ${totalKnown ? pct.toFixed(2) : 30}%;"></i></div>
         </div>
         <div class="download-stats">
-          <span>${currentMB}MB / ${totalMB}MB</span>
-          <span class="download-stats-highlight">${totalKnown ? `${pct}%` : "LIVE"}</span>
+          <span>${currentMB} / ${totalMB} MB${speedText}</span>
+          <span class="download-pct" style="color: ${tone}">${totalKnown ? `${pct.toFixed(1)}%` : "LIVE"}</span>
         </div>
       `;
 

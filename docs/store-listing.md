@@ -10,7 +10,7 @@ Metadata, description and policy disclosures for publishing the extension to the
 |---|---|
 | **Name** | How's My Download |
 | **Short name** | HMD |
-| **Version** | `0.2.1` |
+| **Version** | `0.3.0` |
 | **Category** | Productivity |
 | **Summary (≤ 132 chars)** | Your browser's download progress, speed and ETA on your Android phone. Pause, resume or restart from there. E2E encrypted. |
 | **Website** | `https://github.com/W0NB0N/HowsMyDownload` |
