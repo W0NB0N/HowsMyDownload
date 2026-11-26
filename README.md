@@ -20,9 +20,9 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/images/notification-downloading.png" width="300" alt="Progress notification with speed, ETA and a Pause button"><br><sub>Live progress, speed and ETA</sub></td>
-    <td align="center"><img src="docs/images/notification-states.png" width="300" alt="Paused download with Resume and Restart, a running download, and completed downloads"><br><sub>Paused, running and completed</sub></td>
-    <td align="center"><img src="docs/images/app.png" width="230" alt="The Android app listing two downloads with pause and restart buttons"><br><sub>The app</sub></td>
+    <td align="center"><img src="docs/images/notification.jpg" width="300" alt="Two download notifications, the expanded one showing 41.7%, 18.4 MB/s, 3m 14s left and a Pause button"><br><sub>Live progress, speed and ETA</sub></td>
+    <td align="center"><img src="docs/images/app-completed.jpg" width="230" alt="The Android app paired with a PC, showing a completed download"><br><sub>The app</sub></td>
+    <td align="center"><img src="docs/images/extension.png" width="230" alt="The browser extension popup with a paused download, paired with a phone"><br><sub>The browser extension</sub></td>
   </tr>
 </table>
 
@@ -46,7 +46,7 @@ You need an **Android phone** (Android 8 or newer) and a **Chromium-based browse
 
 **3. Pair them (once)**
 1. Click the extension icon, then **pair device**. A QR code appears. The server field is already set to `https://hmd-api.duckdns.org`; change it only if you run your own server.
-2. In the app, tap **> scan qr code** and point the camera at it. Both sides switch to **PAIRED**.
+2. In the app, tap **SCAN QR CODE** and point the camera at it. Both sides switch to **PAIRED**.
 
 That's it. Start any download in your browser and a progress notification appears on your phone within a few seconds. Use **Pause**, **Resume** and **Restart** on the notification or in the app.
 
@@ -113,7 +113,7 @@ flowchart LR
 - **"PC offline" that survives process death.** An `AlarmManager` watchdog, re-armed by every push, alerts after 90 s of silence even if Android has killed the app. It doesn't rely on in-memory state or visible notifications.
 - **Tested across three languages.**
   - Server: pytest (128 tests, 83% coverage) plus a Firestore emulator suite for the transactional claim.
-  - Extension: 41 Node tests that run the real modules against a `chrome.*` fake.
+  - Extension: 43 Node tests that run the real modules against a `chrome.*` fake.
   - Android: 33 JUnit tests.
   - All of it runs in CI on every push.
 
@@ -158,6 +158,10 @@ Pushes are tied to the Firebase project the app was built with, so running your 
 - Pending commands and push sequencing live in server memory, so the server runs as a single worker, and a restart drops queued commands.
 - Restart can't re-create downloads that came from a form POST or a `blob:` URL.
 - Phone battery cost hasn't been measured yet ([how to](docs/metrics.md#4-not-yet-measured)).
+
+## Credits
+
+**Ideation:** [Piyushgarg06](https://github.com/Piyushgarg06)
 
 ## License
 

@@ -120,7 +120,7 @@ For the API-key restriction in step 1.5, get your certificate's SHA-256 with `ke
 1. Get the extension: the zip from the workflow (unzip it), or the `extension/` folder of your checkout.
 2. Open `chrome://extensions`, enable *Developer mode*, and choose *Load unpacked*.
 3. Open the extension popup, set `--server URL` to `https://your.domain`, and click **pair device**.
-4. In the app, tap **> scan qr code**. The QR carries the server URL and the encryption key, so nothing else needs configuring.
+4. In the app, tap **SCAN QR CODE**. The QR carries the server URL and the encryption key, so nothing else needs configuring.
 
 ## 5. Check that it works
 
